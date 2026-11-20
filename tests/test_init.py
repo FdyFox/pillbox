@@ -267,9 +267,9 @@ async def test_shared_pack_and_person_tags(hass, freezer):
     # Beide Magnesium-Einträge wurden zu einem Medikament mit zwei Packungen zusammengeführt.
     meds = [s for s in entry.subentries.values() if s.subentry_type == "medication"]
     assert [(m.title, [p["strength"] for p in m.data["packs"]]) for m in meds] == [("Magnesium", ["10 mg", "20 mg"])]
-    assert _state(hass, "switch.magnesium_10_mg_anna_morgens") == "off"
-    assert _state(hass, "switch.magnesium_10_mg_ben_morgens") == "off"
-    assert _state(hass, "switch.magnesium_10_mg_anna_mittags") == "off"
+    assert _state(hass, "switch.anna_magnesium_10_mg_morgens") == "off"
+    assert _state(hass, "switch.ben_magnesium_10_mg_morgens") == "off"
+    assert _state(hass, "switch.anna_magnesium_10_mg_mittags") == "off"
     assert _state(hass, "sensor.magnesium_10_mg_days_left") == "10"  # 3 Tabletten pro Tag
     anna = hass.states.get("sensor.anna_open_intakes")
     assert anna.state == "2"
@@ -278,15 +278,15 @@ async def test_shared_pack_and_person_tags(hass, freezer):
 
     # Anna morgens: nur ihre Morgen-Einnahme, nicht schon die vom Mittag.
     await _scan(hass, "tag-anna")
-    assert _state(hass, "switch.magnesium_10_mg_anna_morgens") == "on"
-    assert _state(hass, "switch.magnesium_10_mg_anna_mittags") == "off"
+    assert _state(hass, "switch.anna_magnesium_10_mg_morgens") == "on"
+    assert _state(hass, "switch.anna_magnesium_10_mg_mittags") == "off"
     assert _state(hass, "number.magnesium_10_mg_stock") == "29"
     assert _state(hass, "sensor.anna_open_intakes") == "1"
 
     # Ben morgens: beide Packungen auf einmal.
     await _scan(hass, "tag-ben")
-    assert _state(hass, "switch.magnesium_10_mg_ben_morgens") == "on"
-    assert _state(hass, "switch.magnesium_20_mg_ben_morgens") == "on"
+    assert _state(hass, "switch.ben_magnesium_10_mg_morgens") == "on"
+    assert _state(hass, "switch.ben_magnesium_20_mg_morgens") == "on"
     assert _state(hass, "number.magnesium_10_mg_stock") == "28"
     assert _state(hass, "number.magnesium_20_mg_stock") == "9"
     await _scan(hass, "tag-ben")  # nichts mehr offen
@@ -294,7 +294,7 @@ async def test_shared_pack_and_person_tags(hass, freezer):
 
     # Anna mittags über den Button der Person.
     await _call(hass, "button", "press", "button.anna_take_now")
-    assert _state(hass, "switch.magnesium_10_mg_anna_mittags") == "on"
+    assert _state(hass, "switch.anna_magnesium_10_mg_mittags") == "on"
     assert _state(hass, "number.magnesium_10_mg_stock") == "27"
     assert _state(hass, "sensor.anna_open_intakes") == "0"
 
@@ -306,8 +306,8 @@ async def test_deleted_person_removes_their_intakes(hass, freezer):
     hass.config_entries.async_remove_subentry(entry, "anna")
     await hass.async_block_till_done()
     registry = er.async_get(hass)
-    assert registry.async_get("switch.magnesium_10_mg_anna_morgens") is None
-    assert _state(hass, "switch.magnesium_10_mg_ben_morgens") == "off"
+    assert registry.async_get("switch.anna_magnesium_10_mg_morgens") is None
+    assert _state(hass, "switch.ben_magnesium_10_mg_morgens") == "off"
     assert _state(hass, "sensor.magnesium_10_mg_days_left") == "30"
 
 
@@ -368,7 +368,7 @@ async def test_config_person_and_medication_flow(hass):
         "tablets_per_intake": 1,
         "low_threshold": 5,
     }
-    assert _state(hass, "switch.magnesium_10_mg_anna_noon") == "off"
+    assert _state(hass, "switch.anna_magnesium_10_mg_noon") == "off"
     assert _state(hass, "sensor.magnesium_10_mg_days_left") == "6"
     assert _state(hass, "number.magnesium_20_mg_stock") == "5"
 
@@ -403,7 +403,7 @@ async def test_reconfigure_keeps_and_removes_packs(hass, freezer):
     await hass.async_block_till_done()
     # 10 mg: gleiche Packung, Vorrat und Status bleiben; 20 mg weg; 30 mg neu.
     assert _state(hass, "number.magnesium_10_mg_stock") == "29"
-    assert _state(hass, "switch.magnesium_10_mg_anna_morgens") == "on"
+    assert _state(hass, "switch.anna_magnesium_10_mg_morgens") == "on"
     assert hass.states.get("number.magnesium_20_mg_stock") is None
     assert er.async_get(hass).async_get("number.magnesium_20_mg_stock") is None
     assert _state(hass, "number.magnesium_30_mg_stock") == "7"
@@ -469,4 +469,26 @@ async def test_merge_keeps_stored_stock(hass, hass_storage, freezer):
     await _setup(hass, entry)
     assert _state(hass, "number.magnesium_10_mg_stock") == "21"
     assert _state(hass, "number.magnesium_20_mg_stock") == "4"
-    assert _state(hass, "switch.magnesium_20_mg_ben_morgens") == "on"
+    assert _state(hass, "switch.ben_magnesium_20_mg_morgens") == "on"
+
+
+async def test_person_intakes_on_person_device_keep_entity_id(hass, freezer):
+    """Schalter einer Person hängen an ihrem Gerät; bestehende Entitäts-IDs bleiben."""
+    entry = _family_entry(hass)
+    registry = er.async_get(hass)
+    old = registry.async_get_or_create(
+        "switch", DOMAIN, "m10_intake_1_anna", suggested_object_id="magnesium_10_mg_anna_morgens",
+        config_entry=entry,
+    )
+    freezer.move_to(_at("2026-11-18 07:30:00"))
+    await _setup(hass, entry)
+    switch = registry.async_get(old.entity_id)
+    assert switch.entity_id == "switch.magnesium_10_mg_anna_morgens"
+    from homeassistant.helpers import device_registry as dr
+
+    device = dr.async_get(hass).async_get(switch.device_id)
+    assert device.name == "Anna"
+    assert switch.config_subentry_id == "anna"
+    state = hass.states.get(switch.entity_id)
+    assert state.attributes["friendly_name"] == "Anna Magnesium 10 mg Morgens"
+    assert state.attributes["medication"] == "Magnesium 10 mg"

@@ -74,7 +74,7 @@ Anna scannt morgens → nur „Morgens · Anna“ an 10 mg; mittags scannt sie e
 | Plattform | Entität | Zweck |
 | --- | --- | --- |
 | `number` | `…_stock` | Vorrat in Stk, direkt editierbar (neue Packung → Restmenge eintippen) |
-| `switch` | `…_<person>_<zeit>`, z. B. `…_anna_morgens` | Ein Schalter je Einnahme. An = genommen (Vorrat sinkt), Aus = zurückgenommen (Vorrat steigt wieder). Attribute `slot`, `person`, `ha_person` |
+| `switch` | `…_<zeit>`, z. B. `…_morgens` | Ein Schalter je Einnahme **ohne Person**. An = genommen (Vorrat sinkt), Aus = zurückgenommen (Vorrat steigt wieder) |
 | `sensor` | `…_intakes_today` | Anzahl erledigter Einnahmen heute; Attribute `taken`, `open`, `total` |
 | `binary_sensor` | `…_complete_today` | An, wenn alle Einnahmen des Tages erledigt sind |
 | `sensor` | `…_days_left` | Tage, die der Vorrat noch trägt (Einheit `d`) |
@@ -82,12 +82,13 @@ Anna scannt morgens → nur „Morgens · Anna“ an 10 mg; mittags scannt sie e
 | `binary_sensor` | `…_low_stock` | `problem`, wenn Vorrat unter Schwelle |
 | `button` | `…_take` | Nächste offene Einnahme erfassen (wie ein Tag-Scan) |
 
-Entitäts-IDs folgen Name und Wirkstärke, z. B. `switch.magnesium_10_mg_anna_morgens`. Wird eine Einnahme-Zeit oder Person umbenannt, bleibt die Entität erhalten (nur der Anzeigename ändert sich); fällt eine Einnahme weg oder wird die Person gelöscht, verschwindet der Schalter.
+Entitäts-IDs folgen dem Gerät, z. B. `number.magnesium_10_mg_stock` oder `switch.anna_magnesium_10_mg_morgens`. Bestehende Entitäts-IDs ändert Pillbox nie. Wird eine Einnahme-Zeit oder Person umbenannt, bleibt die Entität erhalten (nur der Anzeigename ändert sich); fällt eine Einnahme weg oder wird die Person gelöscht, verschwindet der Schalter.
 
 ### Pro Person
 
 | Plattform | Entität | Zweck |
 | --- | --- | --- |
+| `switch` | `<person>_<packung>_<zeit>`, z. B. `switch.anna_magnesium_10_mg_morgens` | Ein Schalter je Einnahme der Person, über alle Packungen. So zeigt die Geräteseite der Person, was heute noch offen ist. An/Aus wie oben. Attribute `medication`, `slot`, `person`, `ha_person` |
 | `sensor` | `…_open_intakes` | Offene Einnahmen heute über alle Medikamente; Attribute `next_slot`, `next`, `open`, `taken` |
 | `button` | `…_take_now` | Wie der Tag der Person: alle Einnahmen zur nächsten offenen Zeit abhaken |
 

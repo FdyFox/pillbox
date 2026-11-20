@@ -1,4 +1,7 @@
-"""Ein Schalter je Einnahme eines Medikaments (z. B. „Anna Morgens“ an „Magnesium 10 mg“).
+"""Ein Schalter je Einnahme.
+
+Einnahmen einer Person hängen am Gerät der Person (z. B. „Anna“ → „Magnesium 10 mg Morgens“),
+damit dort sichtbar ist, was sie heute noch nehmen muss. Einnahmen ohne Person hängen an der Packung.
 
 An = Einnahme erledigt, Vorrat sinkt um „Tabletten pro Einnahme“.
 Aus = zurückgenommen (z. B. versehentlich abgehakt), die Tabletten kommen zurück in den Vorrat.
@@ -13,26 +16,34 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import PillboxConfigEntry, PillboxManager, intake_unique_id
 from .const import parse_key
-from .entity import PillboxEntity, add_per_medication
+from .entity import PillboxEntity, person_device_info
 
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: PillboxConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
-    add_per_medication(
-        entry, async_add_entities, lambda m, s: [IntakeSwitch(m, s, key) for key in m.meds[s].intakes]
-    )
+    manager = entry.runtime_data
+    for pack_id, med in manager.meds.items():
+        for key in med.intakes:
+            person_id = parse_key(key)[1]
+            # Der Untereinheit zuordnen, an deren Gerät der Schalter hängt (Person oder Medikament).
+            subentry = person_id or manager.info[pack_id].sub_id
+            async_add_entities([IntakeSwitch(manager, pack_id, key)], config_subentry_id=subentry)
 
 
 class IntakeSwitch(PillboxEntity, SwitchEntity):
     _attr_icon = "mdi:pill"
 
-    def __init__(self, manager: PillboxManager, sub_id: str, key: str) -> None:
-        super().__init__(manager, sub_id, "intake")
+    def __init__(self, manager: PillboxManager, pack_id: str, key: str) -> None:
+        super().__init__(manager, pack_id, "intake")
         self.key = key
-        self._attr_unique_id = intake_unique_id(sub_id, key)
+        self._attr_unique_id = intake_unique_id(pack_id, key)
         self._attr_translation_key = None
-        self._attr_name = manager.intake_name(key)
+        if person_id := parse_key(key)[1]:
+            self._attr_device_info = person_device_info(manager, person_id)
+            self._attr_name = f"{manager.info[pack_id].device_name} {manager.slot_name(key)}"
+        else:
+            self._attr_name = manager.slot_name(key)
 
     @property
     def is_on(self) -> bool:
@@ -42,6 +53,7 @@ class IntakeSwitch(PillboxEntity, SwitchEntity):
     def extra_state_attributes(self) -> dict[str, Any]:
         person = self.manager.person_of(self.key)
         return {
+            "medication": self.manager.info[self.sub_id].device_name,
             "intake": self.manager.intake_name(self.key),
             "slot": self.manager.slot_name(self.key),
             "slot_id": parse_key(self.key)[0],

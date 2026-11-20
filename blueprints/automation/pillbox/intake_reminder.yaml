@@ -81,7 +81,7 @@ variables:
   notify_action: !input notify_action
   repeat_minutes: !input repeat_minutes
   last_reminder: !input last_reminder
-  medication: "{{ device_attr(device_id(switch_entity), 'name') or state_attr(switch_entity, 'friendly_name') }}"
+  medication: "{{ state_attr(switch_entity, 'medication') or device_attr(device_id(switch_entity), 'name') }}"
   intake: "{{ state_attr(switch_entity, 'intake') }}"
   action_id: "PILLBOX_{{ switch_entity }}"
   is_mobile_app: "{{ notify_action.startswith('notify.mobile_app_') }}"

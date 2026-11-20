@@ -34,19 +34,32 @@ class _BaseEntity(Entity):
         )
 
 
+def pack_device_info(manager: PillboxManager, pack_id: str) -> DeviceInfo:
+    return DeviceInfo(
+        identifiers={(DOMAIN, pack_id)},
+        name=manager.info[pack_id].device_name,
+        manufacturer="Pillbox",
+        model="Medikament",
+        entry_type=DeviceEntryType.SERVICE,
+    )
+
+
+def person_device_info(manager: PillboxManager, person_id: str) -> DeviceInfo:
+    return DeviceInfo(
+        identifiers={(DOMAIN, person_id)},
+        name=manager.persons[person_id].name,
+        manufacturer="Pillbox",
+        model="Person",
+        entry_type=DeviceEntryType.SERVICE,
+    )
+
+
 class PillboxEntity(_BaseEntity):
     """Entität einer Packung; `sub_id` ist hier die Packungs-id (ein Gerät je Packung)."""
 
     def __init__(self, manager: PillboxManager, sub_id: str, key: str) -> None:
         super().__init__(manager, sub_id, key)
-        info = manager.info[sub_id]
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, sub_id)},
-            name=info.device_name,
-            manufacturer="Pillbox",
-            model="Medikament",
-            entry_type=DeviceEntryType.SERVICE,
-        )
+        self._attr_device_info = pack_device_info(manager, sub_id)
 
     @property
     def med(self) -> Medication:
@@ -58,13 +71,7 @@ class PersonEntity(_BaseEntity):
 
     def __init__(self, manager: PillboxManager, sub_id: str, key: str) -> None:
         super().__init__(manager, sub_id, key)
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, sub_id)},
-            name=manager.persons[sub_id].name,
-            manufacturer="Pillbox",
-            model="Person",
-            entry_type=DeviceEntryType.SERVICE,
-        )
+        self._attr_device_info = person_device_info(manager, sub_id)
 
     @property
     def person(self) -> Person:
