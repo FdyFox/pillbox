@@ -2,22 +2,26 @@
 
 # Pillbox
 
+> [!NOTE]
+> Diese Integration wurde mit Hilfe von KI (Claude von Anthropic) entwickelt: Code, Tests und Dokumentation sind KI-unterstützt entstanden und werden von mir geprüft und im eigenen Home Assistant genutzt. Pillbox ist eine Merkhilfe, kein Medizinprodukt.
+
 Home-Assistant-Integration (HACS), die Einnahme und Vorrat von Medikamenten trackt.
 Ein NFC-Tag-Scan genügt: Einnahme abhaken, Vorrat runterzählen, Reichweite berechnen. Erinnerungen kommen per Blueprint.
 
-> Status: **v0.1.0-dev**. Config-Flow, Entitäten, Tag-Scan, Tagesreset und der Erinnerungs-Blueprint laufen in den Integrationstests (HA 2026.2), sind aber noch nicht lange auf einer echten Instanz im Einsatz. Services fehlen noch.
+> Status: **v0.1.0-dev**. Läuft im eigenen Home Assistant und in den Integrationstests (HA 2026.2). Services fehlen noch.
 
 ## Ziele
 
-- Ein neues Medikament in der Oberfläche anlegen, ohne Helper, Templates oder Namenskonventionen.
+- Medikamente in der Oberfläche anlegen, ohne Helper, Templates oder Namenskonventionen.
+- Eine Packung je Wirkstärke, jede mit eigenem Vorrat und eigener Reichweite.
 - Mehrere Personen können sich eine Packung teilen (z. B. Geschwister mit demselben Medikament), jede mit eigenem NFC-Tag.
 - Einnahme-Zeiten des Tages („Morgens“, „Mittags“, …) frei benennbar.
 - Erinnerungen flexibel per Blueprint, je Einnahme eigene Uhrzeit und Empfänger.
-- Echte Entitäten und Services, damit Dashboards und Automationen einfach darauf aufbauen.
+- Echte Entitäten, damit Dashboards und Automationen einfach darauf aufbauen.
 
 ## Abgrenzung
 
-**Bei Pillbox steht die Packung im Mittelpunkt, nicht die Person.** Ein Medikament ist eine Packung mit Vorrat; Personen und Einnahme-Zeiten hängen daran. Daraus folgen Reichweite („reicht bis …“) und gemeinsame Packungen für mehrere Personen.
+**Bei Pillbox steht die Packung im Mittelpunkt, nicht die Person.** Ein Medikament hat je Wirkstärke eine Packung mit Vorrat; Personen und Einnahme-Zeiten hängen an den Packungen. Daraus folgen Reichweite („reicht bis …“) und gemeinsame Packungen für mehrere Personen.
 
 Pillbox ist eine **Tages-Checkliste mit Vorratszähler**, kein Terminplaner. Eine Einnahme wie „Morgens“ heißt „irgendwann morgens“: Pillbox fragt nur, ob sie heute erledigt ist und wie lange die Packung noch reicht. Es gibt kein „fällig“, kein „verpasst“ und keine Statistik zur Einnahmetreue. Uhrzeiten kommen nur ins Spiel, wenn man den optionalen Erinnerungs-Blueprint nutzt.
 
@@ -25,86 +29,109 @@ Das passt für Alltagsmedikamente, bei denen es ums Nicht-Vergessen und rechtzei
 
 Wer feste Einnahmezeiten braucht (z. B. exakt alle 12 Stunden), mit Verschieben, Überspringen, Eskalation an Angehörige und Auswertung der Einnahmetreue, ist mit [pill-reminder](https://github.com/GuidoJeuken-6512/pill-reminder) besser bedient. Dort steht die Person im Mittelpunkt, mit ihrem Zeitplan; Vorrat und NFC-Tags deckt pill-reminder nicht ab.
 
+## Installation
+
+- **HACS:** HACS → Benutzerdefinierte Repositories → `https://github.com/FdyFox/pillbox`, Typ „Integration“. Danach „Pillbox“ installieren und Home Assistant neu starten.
+- **Manuell:** `custom_components/pillbox/` nach `/config/custom_components/pillbox/` kopieren und Home Assistant neu starten.
+
+Dann: Einstellungen → Geräte & Dienste → Integration hinzufügen → „Pillbox“.
+
+Entwickelt und getestet mit Home Assistant 2026.2. Das eigene Icon in der Oberfläche zeigt Home Assistant ab 2026.3.
+
 ## Aufbau
 
-- Ein Config-Entry „Pillbox“ (Single Instance). Seine **Optionen** legen die Einnahme-Zeiten des Tages fest: bis zu 6, Standard „Morgens, Mittags, Abends, Nachts“. Umbenennen geht jederzeit; eine Zeit, die noch ein Medikament nutzt, lässt sich nicht löschen.
-- Optional eine Untereinheit **„Personen“** (Typ `person`) für alle Personen; jede Person ist ein Gerät darunter. Angelegt über „Personen hinzufügen“, danach bearbeitet über das Zahnrad bei „Personen“: zuerst die Liste der Namen, dann je Person eine Seite. Umbenennen behält die Einnahmen.
-- Pro **Medikament** eine Untereinheit (Typ `medication`), darunter **je Wirkstärke eine Packung** mit eigenem Gerät und Vorrat. In der Integrationsübersicht steht so „Magnesium“ einmal, darunter „Magnesium 10 mg“, „Magnesium 20 mg“ usw.
+In der Integrationsübersicht sieht das so aus:
 
-### Einstellungen pro Person
+```text
+Pillbox                      ⚙ Einnahme-Zeiten
+├ Personen                   ⚙ Personen bearbeiten
+│  ├ Anna                    Gerät
+│  └ Ben                     Gerät
+└ Magnesium                  ⚙ Medikament bearbeiten
+   ├ Magnesium 10 mg         Gerät (Packung)
+   └ Magnesium 20 mg         Gerät (Packung)
+```
 
-Personen verknüpfst du mit Medikamenten am Medikament selbst: Zahnrad am Medikament → Seite der Packung → „Einnahmen“, z. B. „Morgens · Anna“.
+- **Pillbox** (ein Eintrag). Das Zahnrad legt die **Einnahme-Zeiten** des Tages fest: bis zu 6, Standard „Morgens, Mittags, Abends, Nachts“. Umbenennen geht jederzeit; eine Zeit, die noch eine Packung nutzt, lässt sich nicht löschen.
+- **Personen** (optional, eine Untereinheit für alle). Jede Person ist ein Gerät.
+- **Medikament** (je Medikament eine Untereinheit). Jede Wirkstärke ist eine **Packung** und ein eigenes Gerät.
 
+### Personen
+
+„Personen hinzufügen“ fragt zuerst die Namen ab, danach folgt je Person eine Seite. Später bearbeitest du alle über das Zahnrad bei „Personen“: Namen hinzufügen oder entfernen, je Person Name, HA-Person und Tag ändern. Umbenennen behält die Einnahmen; wird eine Person entfernt, verschwinden ihre Einnahmen aus den Packungen.
 
 | Feld | Bedeutung |
 | --- | --- |
 | `name` | z. B. „Anna“ |
 | `ha_person` | optional, Verknüpfung mit einer Person in HA |
-| `tag_id` | NFC-Tag der Person. Ein Scan hakt alle ihre offenen Einnahmen zur frühesten offenen Einnahme-Zeit ab, über alle Medikamente |
+| `tag_id` | NFC-Tag der Person. Ein Scan hakt alle ihre offenen Einnahmen zur frühesten offenen Einnahme-Zeit ab, über alle Packungen |
 
-### Einstellungen pro Medikament
+### Medikament und Packungen
 
-„Medikament hinzufügen“ fragt zuerst Name und Wirkstärken ab, danach folgt je Wirkstärke eine Seite für die Packung. „Bearbeiten“ läuft genauso; eine neue Wirkstärke fügt eine Packung hinzu, eine entfernte löscht sie.
+„Medikament hinzufügen“ fragt zuerst Name und Wirkstärken ab, danach folgt je Wirkstärke eine Seite für die Packung. Über das Zahnrad am Medikament läuft das Bearbeiten genauso; eine neue Wirkstärke fügt eine Packung hinzu, eine entfernte löscht sie. **Hier verknüpfst du auch Personen mit Medikamenten**: auf der Seite der Packung im Feld „Einnahmen“.
 
 | Feld | Bedeutung | Standard |
 | --- | --- | --- |
 | `name` | Anzeigename, z. B. „Magnesium“ | – |
 | `strengths` | Wirkstärken, z. B. „10 mg“, „20 mg“. Leer = eine Packung ohne Wirkstärke | – |
 
-### Einstellungen pro Packung
+Je Packung:
 
 | Feld | Bedeutung | Standard |
 | --- | --- | --- |
-| `stock` | Startvorrat in Stück | – |
-| `intakes` | Wer nimmt wann: Einnahme-Zeit mit Person, z. B. „Morgens · Anna“, „Morgens · Ben“. Ohne angelegte Personen nur die Zeit | erste Einnahme-Zeit |
-| `tag_id` | NFC-Tag an der Packung; ein Scan erfasst die nächste offene Einnahme. Dropdown mit allen HA-Tags | – |
+| `stock` | Vorrat in Stück. Eine Änderung überschreibt den gezählten Vorrat | – |
+| `intakes` | Wer nimmt wann: Einnahme-Zeit mit Person, z. B. „Morgens · Anna“. Ohne angelegte Personen nur die Zeit | erste Einnahme-Zeit (ohne Personen) |
+| `tag_id` | NFC-Tag an der Packung; ein Scan erfasst die nächste offene Einnahme dieser Packung. Dropdown mit allen HA-Tags | – |
 | `tablets_per_intake` | Tabletten pro Einnahme (eingeklappter Abschnitt „Dosierung und Warnung“) | 1 |
 | `low_threshold` | Warnschwelle für niedrigen Vorrat (ebenda) | 20 |
 
-Ein NFC-Tag gehört genau einer Person oder einem Medikament; doppelte Zuordnungen lehnt das Formular ab.
+Ein NFC-Tag gehört genau einer Person oder einer Packung; doppelte Zuordnungen lehnt das Formular ab.
 
 ### Beispiel: Geschwister mit gemeinsamer Packung
 
-- Personen „Anna“ (Tag am Becher von Anna) und „Ben“.
+- Personen „Anna“ (Tag an ihrem Becher) und „Ben“.
 - Medikament „Magnesium“ mit den Wirkstärken 10 mg und 20 mg:
   - Packung 10 mg: Morgens · Anna, Morgens · Ben, Mittags · Anna.
   - Packung 20 mg: Morgens · Ben.
 
 Anna scannt morgens → nur „Morgens · Anna“ an 10 mg; mittags scannt sie erneut → „Mittags · Anna“. Ben scannt morgens → 10 mg und 20 mg auf einmal. Beide zählen vom selben 10-mg-Vorrat herunter.
 
-## Entitätsmodell (pro Packung)
+## Entitäten
+
+### Pro Packung
 
 | Plattform | Entität | Zweck |
 | --- | --- | --- |
 | `number` | `…_stock` | Vorrat in Stk, direkt editierbar (neue Packung → Restmenge eintippen) |
-| `switch` | `…_<zeit>`, z. B. `…_morgens` | Ein Schalter je Einnahme **ohne Person**. An = genommen (Vorrat sinkt), Aus = zurückgenommen (Vorrat steigt wieder) |
-| `sensor` | `…_intakes_today` | Anzahl erledigter Einnahmen heute; Attribute `taken`, `open`, `total` |
-| `binary_sensor` | `…_complete_today` | An, wenn alle Einnahmen des Tages erledigt sind |
 | `sensor` | `…_days_left` | Tage, die der Vorrat noch trägt (Einheit `d`) |
 | `sensor` | `…_runs_out_on` | Datum (`device_class: date`), bis wann der Vorrat reicht |
-| `binary_sensor` | `…_low_stock` | `problem`, wenn Vorrat unter Schwelle |
-| `button` | `…_take` | Nächste offene Einnahme erfassen (wie ein Tag-Scan) |
-
-Entitäts-IDs folgen dem Gerät, z. B. `number.magnesium_10_mg_stock` oder `switch.anna_magnesium_10_mg_morgens`. Bestehende Entitäts-IDs ändert Pillbox nie. Wird eine Einnahme-Zeit oder Person umbenannt, bleibt die Entität erhalten (nur der Anzeigename ändert sich); fällt eine Einnahme weg oder wird die Person gelöscht, verschwindet der Schalter.
+| `sensor` | `…_intakes_today` | Anzahl erledigter Einnahmen heute; Attribute `taken`, `open`, `total` |
+| `binary_sensor` | `…_complete_today` | An, wenn alle Einnahmen der Packung heute erledigt sind |
+| `binary_sensor` | `…_low_stock` | `problem`, wenn der Vorrat unter der Schwelle liegt |
+| `button` | `…_take` | Nächste offene Einnahme erfassen (wie der Tag an der Packung) |
+| `switch` | `…_<zeit>`, z. B. `…_morgens` | Ein Schalter je Einnahme **ohne Person** (siehe unten) |
 
 ### Pro Person
 
 | Plattform | Entität | Zweck |
 | --- | --- | --- |
-| `switch` | `<person>_<packung>_<zeit>`, z. B. `switch.anna_magnesium_10_mg_morgens` | Ein Schalter je Einnahme der Person, über alle Packungen. So zeigt die Geräteseite der Person, was heute noch offen ist. An/Aus wie oben. Attribute `medication`, `slot`, `person`, `ha_person` |
-| `sensor` | `…_open_intakes` | Offene Einnahmen heute über alle Medikamente; Attribute `next_slot`, `next`, `open`, `taken` |
+| `switch` | `<person>_<packung>_<zeit>`, z. B. `switch.anna_magnesium_10_mg_morgens` | Ein Schalter je Einnahme der Person, über alle Packungen. So zeigt die Geräteseite der Person, was heute noch offen ist |
+| `sensor` | `…_open_intakes` | Offene Einnahmen heute über alle Packungen; Attribute `next_slot`, `next`, `open`, `taken` |
 | `button` | `…_take_now` | Wie der Tag der Person: alle Einnahmen zur nächsten offenen Zeit abhaken |
 
-Persistenz: `Store` (`.storage/pillbox.state.<entry_id>`) mit dem aktuellen Tag und `stock`/`taken` (Status je Einnahme) je Untereinheit. Tagesreset um 04:00; war HA zu dem Zeitpunkt aus, wird der Reset beim Start nachgeholt. Eine Einnahme zwischen Mitternacht und 04:00 zählt noch zum Vortag.
+**Einnahme-Schalter:** An = genommen (Vorrat sinkt um „Tabletten pro Einnahme“), Aus = zurückgenommen (Vorrat steigt wieder). Attribute `medication`, `intake`, `slot`, `slot_id`, `person`, `ha_person`.
 
-Wird der Vorrat über „Medikament bearbeiten“ geändert, überschreibt der neue Wert den gespeicherten Stand. Ohne Änderung bleibt der gezählte Vorrat erhalten.
+Entitäts-IDs folgen dem Gerät, z. B. `number.magnesium_10_mg_stock`. Bestehende Entitäts-IDs ändert Pillbox nie: Beim Umbenennen von Einnahme-Zeiten, Personen oder beim Zusammenführen älterer Einträge ändert sich nur der Anzeigename.
 
-## Services und Events
+### Tag und Speicher
 
-- `pillbox.take` (`entity_id` oder `medication`): Einnahme erfassen.
-- `pillbox.refill` (`entity_id`, `stock`): Restmenge nach neuer Packung setzen.
-- Event `pillbox_low_stock` (`medication`): beim Unterschreiten der Schwelle, für eigene Automationen.
-- Hört auf das HA-Event `tag_scanned` und vergleicht mit den Tags der Personen und Medikamente.
+- Tageswechsel um 04:00: Eine Einnahme zwischen Mitternacht und 04:00 zählt noch zum Vortag. War Home Assistant zu dem Zeitpunkt aus, wird der Wechsel beim Start nachgeholt.
+- Vorrat und Status liegen in `.storage/pillbox.state.<entry_id>`, je Packung.
+
+## Events
+
+- `pillbox_low_stock` (`medication`, z. B. „Magnesium 10 mg“): beim Unterschreiten der Warnschwelle, für eigene Automationen.
+- Pillbox hört auf `tag_scanned` und vergleicht mit den Tags der Personen und Packungen.
 
 ## Erinnerung (Blueprint)
 
@@ -118,17 +145,19 @@ Import: Einstellungen → Automationen → Blueprints → „Blueprint importier
 
 ## Berechnung
 
+Je Packung:
+
 - Tagesverbrauch = Anzahl Einnahmen × `tablets_per_intake`.
 - Heutiger Bedarf = offene Einnahmen × `tablets_per_intake`.
-- Letzter gedeckter Tag = heute + (Vorrat − Bedarf heute) // Tagesverbrauch; ist heute schon alles genommen, ist der Bedarf heute 0.
+- Letzter gedeckter Tag = heute + (Vorrat − Bedarf heute) // Tagesverbrauch.
 - Beispiel: 53 Stk, 1 pro Tag, heute noch offen → reicht bis heute + 52 Tage; heute genommen (52 Stk) → gleiches Datum.
 
 ## Roadmap
 
-1. **v0.1** Config-Flow, Store, Tag-Scan, Entitäten, benannte Einnahmen, Tagesreset, `low_stock`-Event, Übersetzungen (de/en), Erinnerungs-Blueprint, Tests.
+1. **v0.1** Packungen je Wirkstärke, Personen mit NFC-Tag, gemeinsame Packungen, Einnahme-Zeiten, Tagesreset, `low_stock`-Event, Übersetzungen (de/en), Erinnerungs-Blueprint, Tests.
 2. **v0.2** Services `pillbox.take` / `pillbox.refill`.
-3. **v0.3** Mitgelieferte Lovelace-Karte.
-4. Später: mehrere Personen/Gruppen, Rezept-Erinnerung (Vorrat niedrig → Rezept anfordern).
+3. **v0.3** Mitgelieferte Lovelace-Karte bzw. Übersichtsseite (pro Person: was ist offen; pro Packung: Vorrat und Reichweite).
+4. Später: Rezept-Erinnerung (Vorrat niedrig → Rezept anfordern).
 
 ## Entwicklung
 
@@ -140,4 +169,6 @@ scripts/deploy_hass.sh -n          # Probelauf: auf die HA-Instanz kopieren (Zug
 scripts/deploy_hass.sh -r          # kopieren und HA neu starten
 ```
 
-Struktur: `custom_components/pillbox/` (`logic.py` rein, `__init__.py` Manager und Setup, `entity.py` gemeinsame Basis, je Plattform eine Datei, `config_flow.py`, `translations/` de/en, `brand/` Icon ab HA 2026.3), `blueprints/`, `assets/` (Logo-Quellen), `tests/`.
+Struktur: `custom_components/pillbox/` (`logic.py` reine Logik, `__init__.py` Manager, Setup und Übernahme alter Einträge, `entity.py` gemeinsame Basis, je Plattform eine Datei, `config_flow.py`, `translations/` de/en, `brand/` Icon), `blueprints/`, `assets/` (Logo-Quellen), `scripts/`, `tests/`.
+
+Hinweise für Beiträge (auch durch KI-Agenten) stehen in [AGENTS.md](AGENTS.md).
