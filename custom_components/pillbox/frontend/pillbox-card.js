@@ -345,19 +345,20 @@ class PillboxCard extends HTMLElement {
 
   _renderPack(pack) {
     const hidden = new Set(this._config.hide_columns || []);
-    const column = (key, title, value) => (hidden.has(key) ? "" : `<span class="value" title="${title}">${value}</span>`);
+    // Fixed, right-aligned columns so the values line up across rows.
+    const column = (key, title, value) =>
+      hidden.has(key) ? "" : `<span class="value col-${key}" title="${title}">${value}</span>`;
     const step = this._step();
     const adjust = (delta, label, symbol) =>
       `<button class="adj" data-adjust="${escapeHtml(pack.stockEntity)}" data-delta="${delta}" title="${label} (${step})" aria-label="${label} ${step}">${symbol}</button>`;
     const stock = this._config.stock_buttons
-      ? `<span class="stock">${adjust(-step, this._t("remove"), "−")}<span class="value" title="${this._t("stock")}">${escapeHtml(pack.stock)}</span>${adjust(step, this._t("add"), "+")}</span>`
+      ? `<span class="stock">${adjust(-step, this._t("remove"), "−")}<span class="value col-stock" title="${this._t("stock")}">${escapeHtml(pack.stock)}</span>${adjust(step, this._t("add"), "+")}</span>`
       : column("stock", this._t("stock"), escapeHtml(pack.stock));
     return `<div class="pack ${pack.low ? "low" : ""}">
-        <span class="name">${escapeHtml(pack.name)}</span>
+        <span class="name">${escapeHtml(pack.name)}${pack.low ? ` <span class="badge">${this._t("low")}</span>` : ""}</span>
         ${stock}
         ${column("days_left", this._t("daysLeft"), `${escapeHtml(pack.daysLeft ?? "–")} ${this._t("days")}`)}
         ${column("runs_out", this._t("until"), this._formatDate(pack.runsOut))}
-        ${pack.low ? `<span class="badge">${this._t("low")}</span>` : ""}
       </div>`;
   }
 
@@ -432,11 +433,16 @@ class PillboxCard extends HTMLElement {
       .action { border: none; border-radius: 16px; padding: 4px 12px; background: var(--primary-color); color: var(--text-primary-color, #fff); }
       .pack { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 6px 0; border-bottom: 1px solid var(--divider-color); }
       .pack:last-of-type { border-bottom: none; }
-      .pack .value { color: var(--secondary-text-color); font-variant-numeric: tabular-nums; }
+      .pack .value { color: var(--secondary-text-color); font-variant-numeric: tabular-nums; text-align: right; }
+      .pack .col-stock { min-width: 2.2em; }
+      .pack .stock .col-stock { text-align: center; }
+      .pack .col-days_left { min-width: 4.8em; }
+      .pack .col-runs_out { min-width: 4.6em; }
       .pack.low .name, .pack.low .value { color: var(--error-color, #db4437); }
       .stock { display: inline-flex; align-items: center; gap: 4px; }
       .adj { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--divider-color); background: none; color: var(--primary-text-color); line-height: 1; padding: 0; }
       .adj:hover { border-color: var(--primary-color); }
+      .pack .name .badge { margin-left: 6px; font-weight: normal; vertical-align: middle; white-space: nowrap; }
       .badge { font-size: 0.8em; border-radius: 10px; padding: 2px 8px; background: var(--error-color, #db4437); color: var(--text-primary-color, #fff); }
       .empty { color: var(--secondary-text-color); }
     `;
