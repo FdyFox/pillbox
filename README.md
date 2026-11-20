@@ -150,19 +150,35 @@ data:
 
 ## Dashboard card
 
-The integration ships a card and loads it automatically; no resource needs to be added.
-
-```yaml
-type: custom:pillbox-card
-title: Medication     # optional, default "Pillbox"
-show_people: true     # optional
-show_packs: true      # optional
-```
+The integration ships a card and loads it automatically; no resource needs to be added. Add it via the card picker ("Pillbox") and set the options in the card editor; no YAML needed.
 
 - **People:** all intakes of the day as chips (done ✓ / open), the next time of day highlighted, and a "Take now" button. Tapping a chip checks the intake off or undoes it.
 - **Packs:** stock, days left and "lasts until"; packs with low stock are shown in red.
 
-The card is also available in the card picker ("Pillbox"). Its texts follow the user's language (English or German).
+Options (all optional, all available in the editor):
+
+| Option | Meaning | Default |
+| --- | --- | --- |
+| `title` | Card title | "Pillbox" |
+| `hide_people` | Hide the people section | `false` |
+| `people` | Only these people (device IDs), in this order | all, alphabetically |
+| `hide_done_people` | Hide people with nothing left to take today; if everyone is done, a short note is shown | `false` |
+| `hide_take_now` | Hide the "Take now" button | `false` |
+| `hide_packs` | Hide the packs section | `false` |
+| `packs` | Only these packs (device IDs), in this order | all, alphabetically |
+| `low_stock_only` | Only packs with low stock | `false` |
+| `packs_sort` | `name` or `days_left` (shortest first) | `name` |
+| `hide_columns` | Any of `stock`, `days_left`, `runs_out` | none |
+
+```yaml
+type: custom:pillbox-card
+title: Medication
+hide_done_people: true
+packs_sort: days_left
+hide_columns: [stock]
+```
+
+The older keys `show_people` / `show_packs` still work. The card's texts follow the user's language (English or German).
 
 ## Events
 

@@ -1,11 +1,21 @@
 /*
  * Pillbox card: overview of people (open intakes today) and packs (stock, coverage).
  * Served by the integration itself and registered automatically, no build step.
+ * All options can be set in the card editor (getConfigForm); all of them are optional:
  *
  *   type: custom:pillbox-card
- *   title: Pillbox          # optional
- *   show_people: true       # optional
- *   show_packs: true        # optional
+ *   title: Pillbox
+ *   hide_people: false        # hide the people section
+ *   people: [<device_id>]     # only these people, in this order (default: all, alphabetically)
+ *   hide_done_people: false   # hide people with nothing left to take today
+ *   hide_take_now: false      # hide the "Take now" button
+ *   hide_packs: false         # hide the packs section
+ *   packs: [<device_id>]      # only these packs, in this order (default: all)
+ *   low_stock_only: false     # only packs with low stock
+ *   packs_sort: name          # name | days_left
+ *   hide_columns: []          # stock | days_left | runs_out
+ *
+ * Older keys show_people / show_packs are still understood.
  */
 
 const STRINGS = {
@@ -22,6 +32,27 @@ const STRINGS = {
     until: "until",
     low: "Low stock",
     empty: "No Pillbox entities found.",
+    noLowStock: "No pack is running low.",
+    // editor
+    e_title: "Title",
+    e_people: "People",
+    e_packs: "Packs",
+    e_hide_people: "Hide people",
+    e_people_select: "Only these people (in this order)",
+    e_hide_done_people: "Hide people with everything done",
+    e_hide_take_now: "Hide \"Take now\" button",
+    e_hide_packs: "Hide packs",
+    e_packs_select: "Only these packs (in this order)",
+    e_low_stock_only: "Only packs with low stock",
+    e_packs_sort: "Sort packs by",
+    e_sort_name: "Name",
+    e_sort_days_left: "Days left (shortest first)",
+    e_hide_columns: "Hide columns",
+    e_col_stock: "Stock",
+    e_col_days_left: "Days left",
+    e_col_runs_out: "Lasts until",
+    h_people_select: "Empty = all people, alphabetically",
+    h_packs_select: "Empty = all packs",
   },
   de: {
     title: "Pillbox",
@@ -36,7 +67,50 @@ const STRINGS = {
     until: "bis",
     low: "Vorrat niedrig",
     empty: "Keine Pillbox-Entitäten gefunden.",
+    noLowStock: "Keine Packung wird knapp.",
+    // editor
+    e_title: "Titel",
+    e_people: "Personen",
+    e_packs: "Packungen",
+    e_hide_people: "Personen ausblenden",
+    e_people_select: "Nur diese Personen (in dieser Reihenfolge)",
+    e_hide_done_people: "Personen ausblenden, die alles erledigt haben",
+    e_hide_take_now: "Knopf „Jetzt einnehmen“ ausblenden",
+    e_hide_packs: "Packungen ausblenden",
+    e_packs_select: "Nur diese Packungen (in dieser Reihenfolge)",
+    e_low_stock_only: "Nur Packungen mit niedrigem Vorrat",
+    e_packs_sort: "Packungen sortieren nach",
+    e_sort_name: "Name",
+    e_sort_days_left: "Reichweite (kürzeste zuerst)",
+    e_hide_columns: "Spalten ausblenden",
+    e_col_stock: "Vorrat",
+    e_col_days_left: "Reicht noch",
+    e_col_runs_out: "Reicht bis",
+    h_people_select: "Leer = alle Personen, alphabetisch",
+    h_packs_select: "Leer = alle Packungen",
   },
+};
+
+/** UI language outside of a card instance (editor labels), falls back to English. */
+const uiLanguage = () => {
+  const hass = typeof document !== "undefined" ? document.querySelector("home-assistant")?.hass : undefined;
+  const lang = hass?.locale?.language || hass?.language || (typeof navigator !== "undefined" ? navigator.language : "en");
+  return String(lang || "en").split("-")[0];
+};
+const tr = (key, lang = uiLanguage()) => (STRINGS[lang] || STRINGS.en)[key] ?? STRINGS.en[key] ?? key;
+
+/** Normalize a card config: defaults plus the older show_* keys. */
+const normalizeConfig = (config) => {
+  const c = { ...(config || {}) };
+  if (c.show_people === false && c.hide_people === undefined) c.hide_people = true;
+  if (c.show_packs === false && c.hide_packs === undefined) c.hide_packs = true;
+  return {
+    people: [],
+    packs: [],
+    hide_columns: [],
+    packs_sort: "name",
+    ...c,
+  };
 };
 
 const escapeHtml = (value) =>
@@ -44,7 +118,7 @@ const escapeHtml = (value) =>
 
 class PillboxCard extends HTMLElement {
   setConfig(config) {
-    this._config = { show_people: true, show_packs: true, ...(config || {}) };
+    this._config = normalizeConfig(config);
     this._render();
   }
 
@@ -61,9 +135,90 @@ class PillboxCard extends HTMLElement {
     return {};
   }
 
+  /** Card editor, drawn by Home Assistant from this schema. */
+  static getConfigForm() {
+    const t = (key) => tr(key);
+    const devices = (model) => ({ device: { multiple: true, filter: { integration: "pillbox", model } } });
+    const bool = { boolean: {} };
+    return {
+      schema: [
+        { name: "title", selector: { text: {} } },
+        {
+          type: "expandable",
+          name: "",
+          title: t("e_people"),
+          flatten: true,
+          schema: [
+            { name: "hide_people", selector: bool },
+            { name: "people", selector: devices("Person") },
+            { name: "hide_done_people", selector: bool },
+            { name: "hide_take_now", selector: bool },
+          ],
+        },
+        {
+          type: "expandable",
+          name: "",
+          title: t("e_packs"),
+          flatten: true,
+          schema: [
+            { name: "hide_packs", selector: bool },
+            { name: "packs", selector: devices("Medikament") },
+            { name: "low_stock_only", selector: bool },
+            {
+              name: "packs_sort",
+              selector: {
+                select: {
+                  mode: "dropdown",
+                  options: [
+                    { value: "name", label: t("e_sort_name") },
+                    { value: "days_left", label: t("e_sort_days_left") },
+                  ],
+                },
+              },
+            },
+            {
+              name: "hide_columns",
+              selector: {
+                select: {
+                  multiple: true,
+                  options: [
+                    { value: "stock", label: t("e_col_stock") },
+                    { value: "days_left", label: t("e_col_days_left") },
+                    { value: "runs_out", label: t("e_col_runs_out") },
+                  ],
+                },
+              },
+            },
+          ],
+        },
+      ],
+      computeLabel: (schema) =>
+        ({
+          title: t("e_title"),
+          hide_people: t("e_hide_people"),
+          people: t("e_people_select"),
+          hide_done_people: t("e_hide_done_people"),
+          hide_take_now: t("e_hide_take_now"),
+          hide_packs: t("e_hide_packs"),
+          packs: t("e_packs_select"),
+          low_stock_only: t("e_low_stock_only"),
+          packs_sort: t("e_packs_sort"),
+          hide_columns: t("e_hide_columns"),
+        })[schema.name],
+      computeHelper: (schema) => ({ people: t("h_people_select"), packs: t("h_packs_select") })[schema.name],
+    };
+  }
+
   _t(key) {
     const lang = (this._hass?.locale?.language || this._hass?.language || "en").split("-")[0];
-    return (STRINGS[lang] || STRINGS.en)[key];
+    return tr(key, lang);
+  }
+
+  /** Keep the configured order of selected devices; without a selection use the default order. */
+  _select(items, selected, compare) {
+    if (!selected?.length) return items.sort(compare);
+    const order = new Map(selected.map((id, i) => [id, i]));
+    return items.filter((i) => order.has(i.deviceId)).sort((a, b) => order.get(a.deviceId) - order.get(b.deviceId));
   }
 
   /** Pillbox entities grouped by device: { device_id: [ {entity_id, domain, state} ] } */
@@ -97,13 +252,14 @@ class PillboxCard extends HTMLElement {
             String(a.state.attributes.medication).localeCompare(String(b.state.attributes.medication))
         );
       people.push({
+        deviceId,
         name: this._deviceName(deviceId, open.state.attributes.friendly_name),
         nextSlot: open.state.attributes.next_slot,
         intakes,
         takeNow: entities.find((e) => e.domain === "button"),
       });
     }
-    return people.sort((a, b) => a.name.localeCompare(b.name));
+    return this._select(people, this._config.people, (a, b) => a.name.localeCompare(b.name));
   }
 
   _packs(byDevice) {
@@ -114,6 +270,7 @@ class PillboxCard extends HTMLElement {
       const sensor = (deviceClass) =>
         entities.find((e) => e.domain === "sensor" && e.state.attributes.device_class === deviceClass);
       packs.push({
+        deviceId,
         name: this._deviceName(deviceId, stock.state.attributes.friendly_name),
         stock: stock.state.state,
         daysLeft: sensor("duration")?.state.state,
@@ -123,7 +280,14 @@ class PillboxCard extends HTMLElement {
         ),
       });
     }
-    return packs.sort((a, b) => a.name.localeCompare(b.name));
+    const byName = (a, b) => a.name.localeCompare(b.name);
+    let result = this._select(packs, this._config.packs, byName);
+    if (this._config.low_stock_only) result = result.filter((p) => p.low);
+    if (this._config.packs_sort === "days_left") {
+      const days = (p) => (Number.isFinite(Number(p.daysLeft)) ? Number(p.daysLeft) : Infinity);
+      result = [...result].sort((a, b) => days(a) - days(b) || byName(a, b));
+    }
+    return result;
   }
 
   _formatDate(value) {
@@ -151,7 +315,7 @@ class PillboxCard extends HTMLElement {
       ? `${this._t("next")}: <b>${escapeHtml(person.nextSlot)}</b>`
       : `<span class="ok">${this._t("allDone")}</span>`;
     const takeNow =
-      person.takeNow && person.nextSlot
+      !this._config.hide_take_now && person.takeNow && person.nextSlot
         ? `<button class="action" data-press="${escapeHtml(person.takeNow.entity_id)}">${this._t("takeNow")}</button>`
         : "";
     return `<div class="person">
@@ -161,11 +325,13 @@ class PillboxCard extends HTMLElement {
   }
 
   _renderPack(pack) {
+    const hidden = new Set(this._config.hide_columns || []);
+    const column = (key, title, value) => (hidden.has(key) ? "" : `<span class="value" title="${title}">${value}</span>`);
     return `<div class="pack ${pack.low ? "low" : ""}">
         <span class="name">${escapeHtml(pack.name)}</span>
-        <span class="value" title="${this._t("stock")}">${escapeHtml(pack.stock)}</span>
-        <span class="value" title="${this._t("daysLeft")}">${escapeHtml(pack.daysLeft ?? "–")} ${this._t("days")}</span>
-        <span class="value" title="${this._t("until")}">${this._formatDate(pack.runsOut)}</span>
+        ${column("stock", this._t("stock"), escapeHtml(pack.stock))}
+        ${column("days_left", this._t("daysLeft"), `${escapeHtml(pack.daysLeft ?? "–")} ${this._t("days")}`)}
+        ${column("runs_out", this._t("until"), this._formatDate(pack.runsOut))}
         ${pack.low ? `<span class="badge">${this._t("low")}</span>` : ""}
       </div>`;
   }
@@ -176,13 +342,24 @@ class PillboxCard extends HTMLElement {
       this.attachShadow({ mode: "open" });
       this.shadowRoot.addEventListener("click", (ev) => this._onClick(ev));
     }
+    const c = this._config;
     const byDevice = this._collect();
-    const people = this._config.show_people ? this._people(byDevice) : [];
-    const packs = this._config.show_packs ? this._packs(byDevice) : [];
+    const allPeople = c.hide_people ? [] : this._people(byDevice);
+    const people = c.hide_done_people ? allPeople.filter((p) => p.nextSlot) : allPeople;
+    const packs = c.hide_packs ? [] : this._packs(byDevice);
+    const anyPacks = !c.hide_packs && Object.values(byDevice).some((list) => list.some((e) => e.domain === "number"));
+
+    let peopleHtml = "";
+    if (people.length) peopleHtml = people.map((p) => this._renderPerson(p)).join("");
+    else if (allPeople.length) peopleHtml = `<p class="ok">${this._t("allDone")}</p>`;
+    let packsHtml = "";
+    if (packs.length) packsHtml = packs.map((p) => this._renderPack(p)).join("");
+    else if (anyPacks && c.low_stock_only) packsHtml = `<p class="ok">${this._t("noLowStock")}</p>`;
+
     const body =
-      people.length || packs.length
-        ? `${people.length ? `<h3>${this._t("people")}</h3>${people.map((p) => this._renderPerson(p)).join("")}` : ""}
-           ${packs.length ? `<h3>${this._t("packs")}</h3>${packs.map((p) => this._renderPack(p)).join("")}` : ""}`
+      peopleHtml || packsHtml
+        ? `${peopleHtml ? `<h3>${this._t("people")}</h3>${peopleHtml}` : ""}
+           ${packsHtml ? `<h3>${this._t("packs")}</h3>${packsHtml}` : ""}`
         : `<p class="empty">${this._t("empty")}</p>`;
     this.shadowRoot.innerHTML = `<style>${PillboxCard.styles}</style>
       <ha-card header="${escapeHtml(this._config.title ?? this._t("title"))}"><div class="content">${body}</div></ha-card>`;
