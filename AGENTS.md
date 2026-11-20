@@ -10,8 +10,11 @@ Home Assistant integration (HACS) for medication stock and intakes. The domain m
 - `custom_components/pillbox/__init__.py`: `PillboxManager` (load, save, tag scans, day change) and `_async_migrate` (migration of older entries).
 - `custom_components/pillbox/config_flow.py`: Pillbox entry with options (times of day) and the subentries "People" and "Medication" (with packs).
 - Platforms: `number`, `sensor`, `binary_sensor`, `switch`, `button`; common base in `entity.py`.
+- `custom_components/pillbox/services.py`: services `pillbox.take` and `pillbox.refill` (`services.yaml`, icons in `icons.json`).
+- `custom_components/pillbox/frontend/pillbox-card.js`: dashboard card, plain JavaScript without a build step, served and registered by `__init__.py`. Bump `version` in `manifest.json` when it changes, so browsers load the new file.
 - `blueprints/automation/pillbox/intake_reminder.yaml`: reminder blueprint.
-- `tests/`: logic, integration and blueprint tests against a real HA.
+- `tests/`: logic, integration, service, card (rendered with QuickJS) and blueprint tests against a real HA.
+- `.github/workflows/validate.yml`: tests, `hassfest` and HACS validation on every push.
 
 ## Rules
 
@@ -26,8 +29,8 @@ Home Assistant integration (HACS) for medication stock and intakes. The domain m
    uvx ruff check --select F,E9 custom_components tests
    ```
 
-   Setting up the test environment: see the README, section "Development".
-6. **Translations.** Maintain new UI texts in `strings.json`, `translations/en.json` and `translations/de.json`. Home Assistant only loads translations on startup; restart HA Core to check them.
+   Setting up the test environment: see the README, section "Development". Test dependencies are pinned in `requirements_test.txt`. The minimum HA version (`hacs.json`) is the oldest version the full test suite passes on.
+6. **Translations.** Maintain new UI texts (including services and exceptions) in `strings.json`, `translations/en.json` and `translations/de.json`; the card has its own `STRINGS`. Home Assistant only loads translations on startup; restart HA Core to check them.
 7. **Language.** Code, comments, docstrings, README and other docs in English. The UI is translated into English and German via the translation files.
 8. **Commits.** Format `type(): description` in English (e.g. `feat(): …`, `fix(): …`, `docs(): …`, `test(): …`), no `Co-Authored-By` lines or other AI attribution in commits.
 

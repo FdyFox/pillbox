@@ -8,7 +8,9 @@
 Home Assistant integration (HACS) that tracks medication intakes and stock.
 One NFC tag scan is enough: check off the intake, count down the stock, calculate how long it lasts. Reminders come via a blueprint.
 
-> Status: **v0.1.0-dev**. Runs in my own Home Assistant and in the integration tests (HA 2026.2). Services are still missing.
+> Status: **v0.1.0**. Runs in my own Home Assistant; tests run against HA 2025.7 to 2026.2.
+
+[![Validate](https://github.com/FdyFox/pillbox/actions/workflows/validate.yml/badge.svg)](https://github.com/FdyFox/pillbox/actions/workflows/validate.yml)
 
 The user interface is available in English and German.
 
@@ -19,7 +21,8 @@ The user interface is available in English and German.
 - Several people can share a pack (e.g. siblings on the same medication), each with their own NFC tag.
 - Freely named times of day ("Morning", "Noon", ...).
 - Flexible reminders via blueprint, with their own time and recipient per intake.
-- Real entities, so dashboards and automations can easily build on them.
+- Real entities and services, so dashboards and automations can easily build on them.
+- A ready-made dashboard card: who still has to take what today, and how long each pack lasts.
 
 ## Scope
 
@@ -38,7 +41,7 @@ If you need fixed intake times (e.g. exactly every 12 hours), with snooze, skip,
 
 Then: Settings → Devices & services → Add integration → "Pillbox".
 
-Developed and tested with Home Assistant 2026.2. Home Assistant shows the integration's own icon from 2026.3 on.
+Requires Home Assistant 2025.7 or newer (tested with 2025.7 to 2026.2). Home Assistant shows the integration's own icon from 2026.3 on.
 
 ## Structure
 
@@ -130,6 +133,36 @@ Entity IDs follow the device, e.g. `number.magnesium_10_mg_stock`. Pillbox never
 - Day change at 04:00: an intake between midnight and 04:00 still counts for the previous day. If Home Assistant was off at that time, the change is caught up on startup.
 - Stock and status are stored per pack in `.storage/pillbox.state.<entry_id>`.
 
+## Services
+
+| Service | Fields | Effect |
+| --- | --- | --- |
+| `pillbox.take` | `device_id`: pack or person devices | Pack: records the next open intake. Person: checks off all of their open intakes at the next open time of day (like their tag) |
+| `pillbox.refill` | `device_id`: pack devices; `add` **or** `stock` | `add`: adds tablets (e.g. a new pack of 50); `stock`: sets the stock |
+
+```yaml
+action: pillbox.refill
+data:
+  device_id: <device id of "Magnesium 10 mg">
+  add: 50
+```
+
+## Dashboard card
+
+The integration ships a card and loads it automatically; no resource needs to be added.
+
+```yaml
+type: custom:pillbox-card
+title: Medication     # optional, default "Pillbox"
+show_people: true     # optional
+show_packs: true      # optional
+```
+
+- **People:** all intakes of the day as chips (done ✓ / open), the next time of day highlighted, and a "Take now" button. Tapping a chip checks the intake off or undoes it.
+- **Packs:** stock, days left and "lasts until"; packs with low stock are shown in red.
+
+The card is also available in the card picker ("Pillbox"). Its texts follow the user's language (English or German).
+
 ## Events
 
 - `pillbox_low_stock` (`medication`, e.g. "Magnesium 10 mg"): when the stock drops below the warning threshold, for your own automations.
@@ -158,21 +191,21 @@ Per pack:
 
 ## Roadmap
 
-1. **v0.1** Packs per strength, people with NFC tags, shared packs, times of day, day reset, `low_stock` event, translations (de/en), reminder blueprint, tests.
-2. **v0.2** Services `pillbox.take` / `pillbox.refill`.
-3. **v0.3** Bundled Lovelace card or overview page (per person: what is open; per pack: stock and coverage).
-4. Later: prescription reminder (low stock → request a prescription).
+1. **v0.1** Packs per strength, people with NFC tags, shared packs, times of day, day reset, `low_stock` event, services, dashboard card, translations (de/en), reminder blueprint, tests and CI.
+2. Next: prescription reminder (low stock → request a prescription), feedback from daily use.
 
 ## Development
 
 ```bash
 uv venv .venv -p 3.13
-uv pip install -p .venv pytest-homeassistant-custom-component
-.venv/bin/python -m pytest -q      # core logic, integration and blueprint tests against HA
+uv pip install -p .venv -r requirements_test.txt
+.venv/bin/python -m pytest -q      # core logic, integration, services, card and blueprint tests against HA
 scripts/deploy_hass.sh -n          # dry run: copy to the HA instance (access in .env, template .env.example)
 scripts/deploy_hass.sh -r          # copy and restart HA
 ```
 
-Layout: `custom_components/pillbox/` (`logic.py` pure logic, `__init__.py` manager, setup and migration of older entries, `entity.py` common base, one file per platform, `config_flow.py`, `translations/` de/en, `brand/` icon), `blueprints/`, `assets/` (logo sources), `scripts/`, `tests/`.
+Layout: `custom_components/pillbox/` (`logic.py` pure logic, `__init__.py` manager, setup and migration of older entries, `services.py`, `entity.py` common base, one file per platform, `config_flow.py`, `frontend/pillbox-card.js`, `translations/` de/en, `brand/` icon), `blueprints/`, `assets/` (logo sources), `scripts/`, `tests/`.
+
+GitHub Actions run the tests, Home Assistant's `hassfest` and the HACS validation on every push.
 
 Notes for contributors (including AI agents) are in [AGENTS.md](AGENTS.md).
