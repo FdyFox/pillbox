@@ -1,4 +1,4 @@
-"""Reichweite des Vorrats (Tage, Datum) und Einnahmen heute."""
+"""Stock coverage (days, date) and intakes today."""
 from __future__ import annotations
 
 from datetime import date
@@ -51,7 +51,7 @@ class RunsOutOnSensor(PillboxEntity, SensorEntity):
 
 
 class TakenCountSensor(PillboxEntity, SensorEntity):
-    """Anzahl der heute erledigten Einnahmen; Attribute nennen erledigte und offene."""
+    """Number of intakes done today; attributes list done and open ones."""
 
     _attr_icon = "mdi:counter"
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -71,7 +71,7 @@ class TakenCountSensor(PillboxEntity, SensorEntity):
 
 
 class PersonOpenSensor(PersonEntity, SensorEntity):
-    """Offene Einnahmen der Person heute, über alle Medikamente."""
+    """Open intakes of the person today, across all packs."""
 
     _attr_icon = "mdi:account-clock"
     _attr_state_class = SensorStateClass.MEASUREMENT

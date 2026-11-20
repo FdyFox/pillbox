@@ -3,172 +3,176 @@
 # Pillbox
 
 > [!NOTE]
-> Diese Integration wurde mit Hilfe von KI (Claude von Anthropic) entwickelt: Code, Tests und Dokumentation sind KI-unterstützt entstanden und werden von mir geprüft und im eigenen Home Assistant genutzt. Pillbox ist eine Merkhilfe, kein Medizinprodukt.
+> This integration was developed with the help of AI (Claude by Anthropic): code, tests and documentation were written with AI assistance and are reviewed by me and used in my own Home Assistant. Pillbox is a memory aid, not a medical device.
 
-Home-Assistant-Integration (HACS), die Einnahme und Vorrat von Medikamenten trackt.
-Ein NFC-Tag-Scan genügt: Einnahme abhaken, Vorrat runterzählen, Reichweite berechnen. Erinnerungen kommen per Blueprint.
+Home Assistant integration (HACS) that tracks medication intakes and stock.
+One NFC tag scan is enough: check off the intake, count down the stock, calculate how long it lasts. Reminders come via a blueprint.
 
-> Status: **v0.1.0-dev**. Läuft im eigenen Home Assistant und in den Integrationstests (HA 2026.2). Services fehlen noch.
+> Status: **v0.1.0-dev**. Runs in my own Home Assistant and in the integration tests (HA 2026.2). Services are still missing.
 
-## Ziele
+The user interface is available in English and German.
 
-- Medikamente in der Oberfläche anlegen, ohne Helper, Templates oder Namenskonventionen.
-- Eine Packung je Wirkstärke, jede mit eigenem Vorrat und eigener Reichweite.
-- Mehrere Personen können sich eine Packung teilen (z. B. Geschwister mit demselben Medikament), jede mit eigenem NFC-Tag.
-- Einnahme-Zeiten des Tages („Morgens“, „Mittags“, …) frei benennbar.
-- Erinnerungen flexibel per Blueprint, je Einnahme eigene Uhrzeit und Empfänger.
-- Echte Entitäten, damit Dashboards und Automationen einfach darauf aufbauen.
+## Goals
 
-## Abgrenzung
+- Add medications in the UI, without helpers, templates or naming conventions.
+- One pack per strength, each with its own stock and coverage.
+- Several people can share a pack (e.g. siblings on the same medication), each with their own NFC tag.
+- Freely named times of day ("Morning", "Noon", ...).
+- Flexible reminders via blueprint, with their own time and recipient per intake.
+- Real entities, so dashboards and automations can easily build on them.
 
-**Bei Pillbox steht die Packung im Mittelpunkt, nicht die Person.** Ein Medikament hat je Wirkstärke eine Packung mit Vorrat; Personen und Einnahme-Zeiten hängen an den Packungen. Daraus folgen Reichweite („reicht bis …“) und gemeinsame Packungen für mehrere Personen.
+## Scope
 
-Pillbox ist eine **Tages-Checkliste mit Vorratszähler**, kein Terminplaner. Eine Einnahme wie „Morgens“ heißt „irgendwann morgens“: Pillbox fragt nur, ob sie heute erledigt ist und wie lange die Packung noch reicht. Es gibt kein „fällig“, kein „verpasst“ und keine Statistik zur Einnahmetreue. Uhrzeiten kommen nur ins Spiel, wenn man den optionalen Erinnerungs-Blueprint nutzt.
+**In Pillbox, the pack is the center, not the person.** A medication has one pack with stock per strength; people and times of day are attached to the packs. This gives you coverage ("lasts until ...") and shared packs for several people.
 
-Das passt für Alltagsmedikamente, bei denen es ums Nicht-Vergessen und rechtzeitige Nachbestellen geht.
+Pillbox is a **daily checklist with a stock counter**, not a scheduler. An intake like "Morning" means "sometime in the morning": Pillbox only asks whether it has been done today and how long the pack will last. There is no "due", no "missed" and no adherence statistics. Clock times only come into play if you use the optional reminder blueprint.
 
-Wer feste Einnahmezeiten braucht (z. B. exakt alle 12 Stunden), mit Verschieben, Überspringen, Eskalation an Angehörige und Auswertung der Einnahmetreue, ist mit [pill-reminder](https://github.com/GuidoJeuken-6512/pill-reminder) besser bedient. Dort steht die Person im Mittelpunkt, mit ihrem Zeitplan; Vorrat und NFC-Tags deckt pill-reminder nicht ab.
+This fits everyday medication, where the point is not to forget and to reorder in time.
+
+If you need fixed intake times (e.g. exactly every 12 hours), with snooze, skip, escalation to relatives and adherence statistics, [pill-reminder](https://github.com/GuidoJeuken-6512/pill-reminder) is the better fit. There the person is the center, with their schedule; pill-reminder does not cover stock or NFC tags.
 
 ## Installation
 
-- **HACS:** HACS → Benutzerdefinierte Repositories → `https://github.com/FdyFox/pillbox`, Typ „Integration“. Danach „Pillbox“ installieren und Home Assistant neu starten.
-- **Manuell:** `custom_components/pillbox/` nach `/config/custom_components/pillbox/` kopieren und Home Assistant neu starten.
+- **HACS:** HACS → Custom repositories → `https://github.com/FdyFox/pillbox`, type "Integration". Then install "Pillbox" and restart Home Assistant.
+- **Manual:** copy `custom_components/pillbox/` to `/config/custom_components/pillbox/` and restart Home Assistant.
 
-Dann: Einstellungen → Geräte & Dienste → Integration hinzufügen → „Pillbox“.
+Then: Settings → Devices & services → Add integration → "Pillbox".
 
-Entwickelt und getestet mit Home Assistant 2026.2. Das eigene Icon in der Oberfläche zeigt Home Assistant ab 2026.3.
+Developed and tested with Home Assistant 2026.2. Home Assistant shows the integration's own icon from 2026.3 on.
 
-## Aufbau
+## Structure
 
-In der Integrationsübersicht sieht das so aus:
+On the integration page it looks like this:
 
 ```text
-Pillbox                      ⚙ Einnahme-Zeiten
-├ Personen                   ⚙ Personen bearbeiten
-│  ├ Anna                    Gerät
-│  └ Ben                     Gerät
-└ Magnesium                  ⚙ Medikament bearbeiten
-   ├ Magnesium 10 mg         Gerät (Packung)
-   └ Magnesium 20 mg         Gerät (Packung)
+Pillbox                      ⚙ times of day
+├ People                     ⚙ edit people
+│  ├ Anna                    device
+│  └ Ben                     device
+└ Magnesium                  ⚙ edit medication
+   ├ Magnesium 10 mg         device (pack)
+   └ Magnesium 20 mg         device (pack)
 ```
 
-- **Pillbox** (ein Eintrag). Das Zahnrad legt die **Einnahme-Zeiten** des Tages fest: bis zu 6, Standard „Morgens, Mittags, Abends, Nachts“. Umbenennen geht jederzeit; eine Zeit, die noch eine Packung nutzt, lässt sich nicht löschen.
-- **Personen** (optional, eine Untereinheit für alle). Jede Person ist ein Gerät.
-- **Medikament** (je Medikament eine Untereinheit). Jede Wirkstärke ist eine **Packung** und ein eigenes Gerät.
+- **Pillbox** (one entry). The gear icon sets the **times of day**: up to 6, default "Morning, Noon, Evening, Night" (in German "Morgens, Mittags, Abends, Nachts"). They can be renamed at any time; a time that is still used by a pack cannot be removed.
+- **People** (optional, one subentry for everyone). Each person is a device.
+- **Medication** (one subentry per medication). Each strength is a **pack** and its own device.
 
-### Personen
+### People
 
-„Personen hinzufügen“ fragt zuerst die Namen ab, danach folgt je Person eine Seite. Später bearbeitest du alle über das Zahnrad bei „Personen“: Namen hinzufügen oder entfernen, je Person Name, HA-Person und Tag ändern. Umbenennen behält die Einnahmen; wird eine Person entfernt, verschwinden ihre Einnahmen aus den Packungen.
+"Add people" first asks for the names, then shows one page per person. Later you edit everyone via the gear icon at "People": add or remove names, and change name, HA person and tag per person. Renaming keeps a person's intakes; removing a person removes their intakes from the packs.
 
-| Feld | Bedeutung |
+| Field | Meaning |
 | --- | --- |
-| `name` | z. B. „Anna“ |
-| `ha_person` | optional, Verknüpfung mit einer Person in HA |
-| `tag_id` | NFC-Tag der Person. Ein Scan hakt alle ihre offenen Einnahmen zur frühesten offenen Einnahme-Zeit ab, über alle Packungen |
+| `name` | e.g. "Anna" |
+| `ha_person` | optional link to a person in HA |
+| `tag_id` | The person's NFC tag. A scan checks off all of their open intakes at the earliest open time of day, across all packs |
 
-### Medikament und Packungen
+### Medication and packs
 
-„Medikament hinzufügen“ fragt zuerst Name und Wirkstärken ab, danach folgt je Wirkstärke eine Seite für die Packung. Über das Zahnrad am Medikament läuft das Bearbeiten genauso; eine neue Wirkstärke fügt eine Packung hinzu, eine entfernte löscht sie. **Hier verknüpfst du auch Personen mit Medikamenten**: auf der Seite der Packung im Feld „Einnahmen“.
+"Add medication" first asks for name and strengths, then shows one page per strength for the pack. Editing via the gear icon at the medication works the same way; a new strength adds a pack, a removed one deletes it. **This is also where you link people to medications**: on the pack's page, in the "Intakes" field.
 
-| Feld | Bedeutung | Standard |
+| Field | Meaning | Default |
 | --- | --- | --- |
-| `name` | Anzeigename, z. B. „Magnesium“ | – |
-| `strengths` | Wirkstärken, z. B. „10 mg“, „20 mg“. Leer = eine Packung ohne Wirkstärke | – |
+| `name` | Display name, e.g. "Magnesium" | – |
+| `strengths` | Strengths, e.g. "10 mg", "20 mg". Empty = a single pack without strength | – |
 
-Je Packung:
+Per pack:
 
-| Feld | Bedeutung | Standard |
+| Field | Meaning | Default |
 | --- | --- | --- |
-| `stock` | Vorrat in Stück. Eine Änderung überschreibt den gezählten Vorrat | – |
-| `intakes` | Wer nimmt wann: Einnahme-Zeit mit Person, z. B. „Morgens · Anna“. Ohne angelegte Personen nur die Zeit | erste Einnahme-Zeit (ohne Personen) |
-| `tag_id` | NFC-Tag an der Packung; ein Scan erfasst die nächste offene Einnahme dieser Packung. Dropdown mit allen HA-Tags | – |
-| `tablets_per_intake` | Tabletten pro Einnahme (eingeklappter Abschnitt „Dosierung und Warnung“) | 1 |
-| `low_threshold` | Warnschwelle für niedrigen Vorrat (ebenda) | 20 |
+| `stock` | Stock in tablets. Changing it overwrites the counted stock | – |
+| `intakes` | Who takes it when: time of day with person, e.g. "Morning · Anna". Without people, only the time | first time of day (without people) |
+| `tag_id` | NFC tag on the pack; a scan records the next open intake of this pack. Dropdown with all HA tags | – |
+| `tablets_per_intake` | Tablets per intake (collapsed section "Dosage and warning") | 1 |
+| `low_threshold` | Low stock warning threshold (same section) | 20 |
 
-Ein NFC-Tag gehört genau einer Person oder einer Packung; doppelte Zuordnungen lehnt das Formular ab.
+An NFC tag belongs to exactly one person or pack; the form rejects duplicate assignments.
 
-### Beispiel: Geschwister mit gemeinsamer Packung
+### Example: siblings sharing a pack
 
-- Personen „Anna“ (Tag an ihrem Becher) und „Ben“.
-- Medikament „Magnesium“ mit den Wirkstärken 10 mg und 20 mg:
-  - Packung 10 mg: Morgens · Anna, Morgens · Ben, Mittags · Anna.
-  - Packung 20 mg: Morgens · Ben.
+- People "Anna" (tag on her cup) and "Ben".
+- Medication "Magnesium" with the strengths 10 mg and 20 mg:
+  - Pack 10 mg: Morning · Anna, Morning · Ben, Noon · Anna.
+  - Pack 20 mg: Morning · Ben.
 
-Anna scannt morgens → nur „Morgens · Anna“ an 10 mg; mittags scannt sie erneut → „Mittags · Anna“. Ben scannt morgens → 10 mg und 20 mg auf einmal. Beide zählen vom selben 10-mg-Vorrat herunter.
+Anna scans in the morning → only "Morning · Anna" on 10 mg; at noon she scans again → "Noon · Anna". Ben scans in the morning → 10 mg and 20 mg at once. Both count down the same 10 mg stock.
 
-## Entitäten
+## Entities
 
-### Pro Packung
+### Per pack
 
-| Plattform | Entität | Zweck |
+| Platform | Entity | Purpose |
 | --- | --- | --- |
-| `number` | `…_stock` | Vorrat in Stk, direkt editierbar (neue Packung → Restmenge eintippen) |
-| `sensor` | `…_days_left` | Tage, die der Vorrat noch trägt (Einheit `d`) |
-| `sensor` | `…_runs_out_on` | Datum (`device_class: date`), bis wann der Vorrat reicht |
-| `sensor` | `…_intakes_today` | Anzahl erledigter Einnahmen heute; Attribute `taken`, `open`, `total` |
-| `binary_sensor` | `…_complete_today` | An, wenn alle Einnahmen der Packung heute erledigt sind |
-| `binary_sensor` | `…_low_stock` | `problem`, wenn der Vorrat unter der Schwelle liegt |
-| `button` | `…_take` | Nächste offene Einnahme erfassen (wie der Tag an der Packung) |
-| `switch` | `…_<zeit>`, z. B. `…_morgens` | Ein Schalter je Einnahme **ohne Person** (siehe unten) |
+| `number` | `…_stock` | Stock in tablets, directly editable (new pack → type in the remaining amount) |
+| `sensor` | `…_days_left` | Days the stock still lasts (unit `d`) |
+| `sensor` | `…_runs_out_on` | Date (`device_class: date`) until which the stock lasts |
+| `sensor` | `…_intakes_today` | Number of intakes done today; attributes `taken`, `open`, `total` |
+| `binary_sensor` | `…_complete_today` | On when all intakes of the pack are done today |
+| `binary_sensor` | `…_low_stock` | `problem` when the stock is below the threshold |
+| `button` | `…_take` | Record the next open intake (like the tag on the pack) |
+| `switch` | `…_<time>`, e.g. `…_morning` | One switch per intake **without a person** (see below) |
 
-### Pro Person
+### Per person
 
-| Plattform | Entität | Zweck |
+| Platform | Entity | Purpose |
 | --- | --- | --- |
-| `switch` | `<person>_<packung>_<zeit>`, z. B. `switch.anna_magnesium_10_mg_morgens` | Ein Schalter je Einnahme der Person, über alle Packungen. So zeigt die Geräteseite der Person, was heute noch offen ist |
-| `sensor` | `…_open_intakes` | Offene Einnahmen heute über alle Packungen; Attribute `next_slot`, `next`, `open`, `taken` |
-| `button` | `…_take_now` | Wie der Tag der Person: alle Einnahmen zur nächsten offenen Zeit abhaken |
+| `switch` | `<person>_<pack>_<time>`, e.g. `switch.anna_magnesium_10_mg_morning` | One switch per intake of the person, across all packs. This way the person's device page shows what is still open today |
+| `sensor` | `…_open_intakes` | Open intakes today across all packs; attributes `next_slot`, `next`, `open`, `taken` |
+| `button` | `…_take_now` | Like the person's tag: check off all intakes at the next open time of day |
 
-**Einnahme-Schalter:** An = genommen (Vorrat sinkt um „Tabletten pro Einnahme“), Aus = zurückgenommen (Vorrat steigt wieder). Attribute `medication`, `intake`, `slot`, `slot_id`, `person`, `ha_person`.
+**Intake switches:** on = taken (stock drops by "tablets per intake"), off = undone (stock goes back up). Attributes `medication`, `intake`, `slot`, `slot_id`, `person`, `ha_person`.
 
-Entitäts-IDs folgen dem Gerät, z. B. `number.magnesium_10_mg_stock`. Bestehende Entitäts-IDs ändert Pillbox nie: Beim Umbenennen von Einnahme-Zeiten, Personen oder beim Zusammenführen älterer Einträge ändert sich nur der Anzeigename.
+Entity IDs follow the device, e.g. `number.magnesium_10_mg_stock`. Pillbox never changes existing entity IDs: renaming times of day or people, or merging older entries, only changes the display name.
 
-### Tag und Speicher
+### Day and storage
 
-- Tageswechsel um 04:00: Eine Einnahme zwischen Mitternacht und 04:00 zählt noch zum Vortag. War Home Assistant zu dem Zeitpunkt aus, wird der Wechsel beim Start nachgeholt.
-- Vorrat und Status liegen in `.storage/pillbox.state.<entry_id>`, je Packung.
+- Day change at 04:00: an intake between midnight and 04:00 still counts for the previous day. If Home Assistant was off at that time, the change is caught up on startup.
+- Stock and status are stored per pack in `.storage/pillbox.state.<entry_id>`.
 
 ## Events
 
-- `pillbox_low_stock` (`medication`, z. B. „Magnesium 10 mg“): beim Unterschreiten der Warnschwelle, für eigene Automationen.
-- Pillbox hört auf `tag_scanned` und vergleicht mit den Tags der Personen und Packungen.
+- `pillbox_low_stock` (`medication`, e.g. "Magnesium 10 mg"): when the stock drops below the warning threshold, for your own automations.
+- Pillbox listens to `tag_scanned` and compares with the tags of people and packs.
 
-## Erinnerung (Blueprint)
+## Reminder (blueprint)
 
-[`blueprints/automation/pillbox/intake_reminder.yaml`](blueprints/automation/pillbox/intake_reminder.yaml), eine Automation pro Einnahme:
+[`blueprints/automation/pillbox/intake_reminder.yaml`](blueprints/automation/pillbox/intake_reminder.yaml), one automation per intake:
 
-- Eingaben: Einnahme-Schalter, Uhrzeit Mo–Fr und Sa–So, Benachrichtigungs-Action (z. B. `notify.mobile_app_handy`), Wiederholung in Minuten (0 = einmal), letzte Erinnerung (Standard 22:00), Titel und Text.
-- Erinnert ab der Uhrzeit, solange der Schalter aus ist, und hört auf, sobald die Einnahme erledigt ist.
-- Bei `notify.mobile_app_*`: Knopf „Genommen“ in der Benachrichtigung hakt die Einnahme direkt ab; erledigte Erinnerungen werden vom Handy entfernt.
+- Inputs: intake switch, time Mon–Fri and Sat–Sun, notify action (e.g. `notify.mobile_app_phone`), repeat interval in minutes (0 = once), last reminder (default 22:00), title and message.
+- Reminds from the given time while the switch is off and stops as soon as the intake is done.
+- With `notify.mobile_app_*`: a "Taken" button in the notification checks off the intake directly; done reminders are removed from the phone.
 
-Import: Einstellungen → Automationen → Blueprints → „Blueprint importieren“ mit der GitHub-URL der Datei, oder die Datei nach `/config/blueprints/automation/pillbox/` kopieren.
+The blueprint's texts are currently in German; title and message can be set via the inputs.
 
-## Berechnung
+Import: Settings → Automations → Blueprints → "Import blueprint" with the file's GitHub URL, or copy the file to `/config/blueprints/automation/pillbox/`.
 
-Je Packung:
+## Calculation
 
-- Tagesverbrauch = Anzahl Einnahmen × `tablets_per_intake`.
-- Heutiger Bedarf = offene Einnahmen × `tablets_per_intake`.
-- Letzter gedeckter Tag = heute + (Vorrat − Bedarf heute) // Tagesverbrauch.
-- Beispiel: 53 Stk, 1 pro Tag, heute noch offen → reicht bis heute + 52 Tage; heute genommen (52 Stk) → gleiches Datum.
+Per pack:
+
+- Daily consumption = number of intakes × `tablets_per_intake`.
+- Need today = open intakes × `tablets_per_intake`.
+- Last covered day = today + (stock − need today) // daily consumption.
+- Example: 53 tablets, 1 per day, still open today → lasts until today + 52 days; taken today (52 tablets) → same date.
 
 ## Roadmap
 
-1. **v0.1** Packungen je Wirkstärke, Personen mit NFC-Tag, gemeinsame Packungen, Einnahme-Zeiten, Tagesreset, `low_stock`-Event, Übersetzungen (de/en), Erinnerungs-Blueprint, Tests.
+1. **v0.1** Packs per strength, people with NFC tags, shared packs, times of day, day reset, `low_stock` event, translations (de/en), reminder blueprint, tests.
 2. **v0.2** Services `pillbox.take` / `pillbox.refill`.
-3. **v0.3** Mitgelieferte Lovelace-Karte bzw. Übersichtsseite (pro Person: was ist offen; pro Packung: Vorrat und Reichweite).
-4. Später: Rezept-Erinnerung (Vorrat niedrig → Rezept anfordern).
+3. **v0.3** Bundled Lovelace card or overview page (per person: what is open; per pack: stock and coverage).
+4. Later: prescription reminder (low stock → request a prescription).
 
-## Entwicklung
+## Development
 
 ```bash
 uv venv .venv -p 3.13
 uv pip install -p .venv pytest-homeassistant-custom-component
-.venv/bin/python -m pytest -q      # Kernlogik, Integrationstests und Blueprint gegen HA
-scripts/deploy_hass.sh -n          # Probelauf: auf die HA-Instanz kopieren (Zugang in .env, Vorlage .env.example)
-scripts/deploy_hass.sh -r          # kopieren und HA neu starten
+.venv/bin/python -m pytest -q      # core logic, integration and blueprint tests against HA
+scripts/deploy_hass.sh -n          # dry run: copy to the HA instance (access in .env, template .env.example)
+scripts/deploy_hass.sh -r          # copy and restart HA
 ```
 
-Struktur: `custom_components/pillbox/` (`logic.py` reine Logik, `__init__.py` Manager, Setup und Übernahme alter Einträge, `entity.py` gemeinsame Basis, je Plattform eine Datei, `config_flow.py`, `translations/` de/en, `brand/` Icon), `blueprints/`, `assets/` (Logo-Quellen), `scripts/`, `tests/`.
+Layout: `custom_components/pillbox/` (`logic.py` pure logic, `__init__.py` manager, setup and migration of older entries, `entity.py` common base, one file per platform, `config_flow.py`, `translations/` de/en, `brand/` icon), `blueprints/`, `assets/` (logo sources), `scripts/`, `tests/`.
 
-Hinweise für Beiträge (auch durch KI-Agenten) stehen in [AGENTS.md](AGENTS.md).
+Notes for contributors (including AI agents) are in [AGENTS.md](AGENTS.md).

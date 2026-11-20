@@ -1,4 +1,4 @@
-"""Vorrat als direkt editierbare Zahl (neue Packung -> Restmenge eintippen)."""
+"""Stock as a directly editable number (new pack -> type in the remaining amount)."""
 from __future__ import annotations
 
 from homeassistant.components.number import NumberEntity, NumberMode

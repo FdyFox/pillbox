@@ -1,10 +1,10 @@
-"""Pillbox – Medikamenten-Tracking mit Tag-Scan, Vorrat und Reichweite.
+"""Pillbox – medication tracking with tag scans, stock and coverage.
 
-Modell: Ein Medikament ist eine Packung (Vorrat). Seine Einnahmen sind Kombinationen aus
-Einnahme-Zeit (für die ganze Pillbox gleich, z. B. Morgens/Mittags) und optional einer Person.
-Mehrere Personen können sich eine Packung teilen.
+Model: a medication has one pack (with stock) per strength. A pack's intakes combine a
+time of day (shared by the whole Pillbox, e.g. morning/noon) with an optional person.
+Several people can share one pack.
 
-Kernlogik: logic.py (getestet). Hier: Verdrahtung mit HA.
+Core logic: logic.py (tested). Here: wiring with Home Assistant.
 """
 from __future__ import annotations
 
@@ -58,7 +58,7 @@ from .logic import Medication
 
 _LOGGER = logging.getLogger(__name__)
 
-# Feste Entitäten (Schlüssel = Suffix der unique_id); dazu ein Schalter je Einnahme.
+# Fixed entities (key = unique_id suffix); plus one switch per intake.
 MED_ENTITY_KEYS = ("stock", "days_left", "runs_out_on", "taken_count", "low_stock", "complete_today", "take")
 PERSON_ENTITY_KEYS = ("take_now", "open_intakes")
 
@@ -66,7 +66,7 @@ type PillboxConfigEntry = ConfigEntry["PillboxManager"]
 
 
 def logical_today(now: datetime | None = None) -> date:
-    """Aktueller Pillbox-Tag: wechselt um DAY_RESET_HOUR statt um Mitternacht."""
+    """Current Pillbox day: changes at DAY_RESET_HOUR instead of midnight."""
     now = now or dt_util.now()
     return (now - timedelta(hours=DAY_RESET_HOUR)).date()
 
@@ -74,17 +74,17 @@ def logical_today(now: datetime | None = None) -> date:
 @dataclass
 class Person:
     name: str
-    sub_id: str  # Untereinheit „Personen“, zu der die Person gehört
+    sub_id: str  # "People" subentry the person belongs to
     tag_id: str | None = None
     ha_person: str | None = None
 
 
 @dataclass
 class MedInfo:
-    """Anzeige-Infos einer Packung (Medikament + Wirkstärke)."""
+    """Display info of a pack (medication + strength)."""
 
     name: str
-    sub_id: str  # Untereinheit des Medikaments, zu der die Packung gehört
+    sub_id: str  # medication subentry the pack belongs to
     strength: str | None = None
     tag_id: str | None = None
     config: dict[str, Any] = field(default_factory=dict)
@@ -95,7 +95,7 @@ class MedInfo:
 
 
 class PillboxManager:
-    """Hält Medikamente und Personen im Speicher, persistiert Vorrat/Status, verarbeitet Scans."""
+    """Holds packs and people in memory, persists stock/status, handles scans."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         self.hass = hass
@@ -103,14 +103,14 @@ class PillboxManager:
         self.store: Store = Store(hass, STORAGE_VERSION, f"{STORAGE_KEY}.{entry.entry_id}")
         self.slots: dict[str, str] = dict(entry.options.get(CONF_SLOTS) or default_slots(hass.config.language))
         self.persons: dict[str, Person] = {}  # key = subentry_id
-        # Packungen: key = Packungs-id (bei übernommenen Einträgen = alte subentry_id)
+        # Packs: key = pack id (for migrated entries = old subentry_id)
         self.meds: dict[str, Medication] = {}
         self.info: dict[str, MedInfo] = {}
-        self.tags: dict[str, tuple[str, str]] = {}  # tag_id -> ("medication"|"person", Packungs-/Personen-id)
-        self._config_stock: dict[str, int] = {}  # zuletzt übernommener Startvorrat aus der Konfiguration
+        self.tags: dict[str, tuple[str, str]] = {}  # tag_id -> ("medication"|"person", pack/person id)
+        self._config_stock: dict[str, int] = {}  # stock from the configuration last applied
         self.day: date = logical_today()
 
-    # --- Laden / Speichern -------------------------------------------------
+    # --- Load / save -------------------------------------------------------
 
     def _slot_order(self, key: str) -> tuple[int, str]:
         slot_id, person_id = parse_key(key)
@@ -140,7 +140,7 @@ class PillboxManager:
             for pack in sub.data.get(CONF_PACKS, []):
                 self._load_pack(sub_id, name, pack, saved_meds.get(pack[CONF_PACK_ID], {}))
 
-        # Tageswechsel verpasst (z. B. HA war um 04:00 aus) -> jetzt nachholen.
+        # Missed day change (e.g. HA was off at 04:00) -> catch up now.
         if saved_day != self.day.isoformat():
             for med in self.meds.values():
                 med.reset_day()
@@ -149,20 +149,20 @@ class PillboxManager:
     def _load_pack(self, sub_id: str, name: str, d: dict[str, Any], state: dict[str, Any]) -> None:
         pack_id = d[CONF_PACK_ID]
         config_stock = int(d.get(CONF_STOCK, 0))
-        # Vorrat in der Konfiguration geändert (Bearbeiten) -> übernehmen, sonst gespeicherten Stand.
+        # Stock changed in the configuration (edit) -> apply it, otherwise keep the stored value.
         if "stock" in state and state.get("config_stock") == config_stock:
             stock = int(state["stock"])
         else:
             stock = config_stock
 
-        # Einnahmen zu gelöschten Zeiten oder Personen fallen weg.
+        # Intakes of deleted times of day or people are dropped.
         data_keys = [
             k
             for k in d.get(CONF_INTAKES, [])
             if parse_key(k)[0] in self.slots and (parse_key(k)[1] is None or parse_key(k)[1] in self.persons)
         ] or [make_key(next(iter(sorted(self.slots, key=int))), None)]
         saved_taken = state.get("taken", [True] * int(state.get("taken_today", 0)))
-        if isinstance(saved_taken, list):  # älterer Speicherstand: nach Position
+        if isinstance(saved_taken, list):  # older stored state: by position
             saved_taken = dict(zip(data_keys, saved_taken))
         keys = sorted(data_keys, key=self._slot_order)
 
@@ -196,7 +196,7 @@ class PillboxManager:
             }
         )
 
-    # --- Namen -------------------------------------------------------------
+    # --- Names -------------------------------------------------------------
 
     def slot_name(self, key: str) -> str:
         return self.slots.get(parse_key(key)[0], "?")
@@ -206,12 +206,12 @@ class PillboxManager:
         return self.persons.get(person_id) if person_id else None
 
     def intake_name(self, key: str) -> str:
-        """Anzeigename einer Einnahme, z. B. „Anna Morgens“ oder nur „Morgens“."""
+        """Display name of an intake, e.g. "Anna Morning" or just "Morning"."""
         person = self.person_of(key)
         return f"{person.name} {self.slot_name(key)}" if person else self.slot_name(key)
 
     def person_intakes(self, person_id: str) -> list[tuple[str, str, bool]]:
-        """Alle Einnahmen einer Person: (Medikament-id, Schlüssel, erledigt), in Tagesreihenfolge."""
+        """All intakes of a person: (pack id, key, taken), in order of the day."""
         result = [
             (sub_id, key, taken)
             for sub_id, med in self.meds.items()
@@ -221,17 +221,17 @@ class PillboxManager:
         return sorted(result, key=lambda r: self._slot_order(r[1]))
 
     def next_slot_for(self, person_id: str) -> str | None:
-        """Früheste Einnahme-Zeit, zu der die Person heute noch etwas offen hat."""
+        """Earliest time of day at which the person still has something open today."""
         return next((parse_key(k)[0] for _, k, taken in self.person_intakes(person_id) if not taken), None)
 
-    # --- Änderungen --------------------------------------------------------
+    # --- Changes -----------------------------------------------------------
 
     def _notify(self, sub_ids) -> None:
         for sub_id in sub_ids:
             async_dispatcher_send(self.hass, signal(self.entry.entry_id, sub_id))
 
     def _roll_day(self) -> bool:
-        """Status 'heute genommen' zurücksetzen, falls ein neuer Pillbox-Tag begonnen hat."""
+        """Reset the 'taken today' status if a new Pillbox day has started."""
         today = logical_today()
         if today == self.day:
             return False
@@ -243,7 +243,7 @@ class PillboxManager:
     async def _async_change(
         self, changes: dict[str, Callable[[Medication], bool]], rolled: bool = False
     ) -> bool:
-        """Änderungen an Medikamenten anwenden, speichern, Entitäten und ggf. low_stock-Event auslösen."""
+        """Apply changes to packs, save, update entities and fire low_stock if needed."""
         rolled = self._roll_day() or rolled
         changed: list[str] = []
         low_now: list[str] = []
@@ -256,18 +256,18 @@ class PillboxManager:
                     low_now.append(sub_id)
         if changed or rolled:
             await self.async_save()
-            # Personen-Entitäten hängen an allen Medikamenten -> immer mit aktualisieren.
+            # Person entities depend on all packs -> always update them too.
             self._notify([*(self.meds if rolled else changed), *self.persons])
         for sub_id in low_now:
             self.hass.bus.async_fire(EVENT_LOW_STOCK, {"medication": self.info[sub_id].device_name})
         return bool(changed)
 
     async def async_take(self, sub_id: str) -> bool:
-        """Nächste offene Einnahme eines Medikaments erfassen (Tag an der Packung, Button)."""
+        """Record the next open intake of a pack (tag on the pack, button)."""
         return await self._async_change({sub_id: lambda m: m.take()})
 
     async def async_take_person(self, person_id: str) -> bool:
-        """Alle offenen Einnahmen der Person zur frühesten offenen Einnahme-Zeit abhaken (Tag der Person)."""
+        """Check off all open intakes of the person at their earliest open time of day (person's tag)."""
         rolled = self._roll_day()
         slot = self.next_slot_for(person_id)
         if slot is None:
@@ -280,7 +280,7 @@ class PillboxManager:
         )
 
     async def async_set_intake(self, sub_id: str, key: str, taken: bool) -> bool:
-        """Eine bestimmte Einnahme abhaken (Vorrat runter) oder zurücknehmen (Vorrat hoch)."""
+        """Check off a specific intake (stock down) or undo it (stock up)."""
         return await self._async_change({sub_id: lambda m: m.set_intake(m.intakes.index(key), taken)})
 
     async def async_refill(self, sub_id: str, stock: int) -> None:
@@ -300,7 +300,7 @@ class PillboxManager:
             self.hass.async_create_task(self.async_take(sub_id))
 
     def expected_unique_ids(self) -> set[str]:
-        """Alle unique_ids, die es nach aktueller Konfiguration geben soll."""
+        """All unique_ids that should exist for the current configuration."""
         ids: set[str] = set()
         for sub_id, med in self.meds.items():
             ids |= {f"{sub_id}_{k}" for k in MED_ENTITY_KEYS}
@@ -335,20 +335,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: PillboxConfigEntry) -> b
 
     _async_remove_stale_entities(hass, entry, manager)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    # TODO (v0.2): Services pillbox.take / pillbox.refill registrieren (services.yaml)
+    # TODO (v0.2): register services pillbox.take / pillbox.refill (services.yaml)
     return True
 
 
 @callback
 def _async_migrate(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Ältere Einträge übernehmen: Einnahme-Zeiten, Packungen je Wirkstärke, gleichnamige zusammenführen."""
+    """Migrate older entries: times of day, packs per strength, merge entries with the same name."""
     language = hass.config.language
     slots: dict[str, str] = dict(entry.options.get(CONF_SLOTS) or {})
     slots_changed = not slots
     if not slots:
         slots = default_slots(language)
 
-    # 1. Einzelne Packung (alte, flache Daten) -> Medikament mit Liste von Packungen.
+    # 1. Single pack (old, flat data) -> medication with a list of packs.
     for sub in list(entry.subentries.values()):
         if sub.subentry_type != SUBENTRY_MEDICATION or CONF_PACKS in sub.data:
             continue
@@ -356,12 +356,12 @@ def _async_migrate(hass: HomeAssistant, entry: ConfigEntry) -> None:
         intakes = data.get(CONF_INTAKES)
         if not (intakes and all("|" in str(i) for i in intakes)):
             data[CONF_INTAKES] = _legacy_keys(sub.data, slots, language, sub.title)
-            slots_changed = True  # evtl. neue Einnahme-Zeiten ergänzt
+            slots_changed = True  # new times of day may have been added
         name = data.pop(CONF_NAME, None) or sub.title
-        pack = {CONF_PACK_ID: sub.subentry_id, **data}  # alte subentry_id -> Vorrat und Entitäten bleiben
+        pack = {CONF_PACK_ID: sub.subentry_id, **data}  # old subentry_id -> stock and entities are kept
         hass.config_entries.async_update_subentry(entry, sub, title=name, data={CONF_NAME: name, CONF_PACKS: [pack]})
 
-    # 2. Einzelne Personen (früher je Person ein Eintrag) -> Liste; id bleibt die alte subentry_id.
+    # 2. Single people (formerly one entry each) -> list; the id stays the old subentry_id.
     for sub in list(entry.subentries.values()):
         if sub.subentry_type != SUBENTRY_PERSON or CONF_PERSONS in sub.data:
             continue
@@ -369,7 +369,7 @@ def _async_migrate(hass: HomeAssistant, entry: ConfigEntry) -> None:
         person |= {k: v for k, v in sub.data.items() if k in (CONF_HA_PERSON, CONF_TAG_ID)}
         hass.config_entries.async_update_subentry(entry, sub, data={CONF_PERSONS: [person]})
 
-    # 3. Alle Personen in eine Untereinheit „Personen“.
+    # 3. All people into one "People" subentry.
     person_subs = [s for s in entry.subentries.values() if s.subentry_type == SUBENTRY_PERSON]
     if person_subs:
         keep, *others = person_subs
@@ -381,7 +381,7 @@ def _async_migrate(hass: HomeAssistant, entry: ConfigEntry) -> None:
             _move_to_subentry(hass, entry, other.subentry_id, keep.subentry_id)
             hass.config_entries.async_remove_subentry(entry, other.subentry_id)
 
-    # 4. Gleichnamige Medikamente (früher je Wirkstärke ein Eintrag) zusammenführen.
+    # 4. Merge medications with the same name (formerly one entry per strength).
     by_name: dict[str, list] = {}
     for sub in entry.subentries.values():
         if sub.subentry_type == SUBENTRY_MEDICATION:
@@ -403,7 +403,7 @@ def _async_migrate(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 @callback
 def _move_to_subentry(hass: HomeAssistant, entry: ConfigEntry, old: str, new: str) -> None:
-    """Entitäten und Geräte einer Untereinheit umhängen, bevor sie gelöscht wird (IDs bleiben)."""
+    """Move entities and devices of a subentry before it is removed (IDs are kept)."""
     entities = er.async_get(hass)
     for reg in er.async_entries_for_config_entry(entities, entry.entry_id):
         if reg.config_subentry_id == old:
@@ -420,14 +420,14 @@ def _move_to_subentry(hass: HomeAssistant, entry: ConfigEntry, old: str, new: st
 
 
 def _legacy_keys(data: dict, slots: dict[str, str], language: str | None, title: str) -> list[str]:
-    """Alte Einnahme-Namen auf Einnahme-Zeiten abbilden; fehlende Zeiten werden in `slots` ergänzt."""
+    """Map old intake names to times of day; missing times are added to `slots`."""
     keys: list[str] = []
     for name in legacy_intake_names(data, language):
         slot_id = next((sid for sid, sname in slots.items() if sname.casefold() == name.casefold()), None)
         if slot_id is None:
             slot_id = next((str(i) for i in range(1, MAX_SLOTS + 1) if str(i) not in slots), None)
             if slot_id is None:
-                _LOGGER.warning("Einnahme „%s“ von %s: keine freie Einnahme-Zeit mehr", name, title)
+                _LOGGER.warning("Intake '%s' of %s: no free time of day left", name, title)
                 continue
             slots[slot_id] = name
         keys.append(make_key(slot_id, None))
@@ -436,13 +436,13 @@ def _legacy_keys(data: dict, slots: dict[str, str], language: str | None, title:
 
 @callback
 def _async_remove_stale_entities(hass: HomeAssistant, entry: ConfigEntry, manager: PillboxManager) -> None:
-    """Entitäten entfernen, die es nicht mehr gibt (Einnahme entfernt, alte Versionen)."""
+    """Remove entities that no longer exist (intake removed, old versions)."""
     registry = er.async_get(hass)
     expected = manager.expected_unique_ids()
     for reg_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
         if reg_entry.unique_id not in expected:
             registry.async_remove(reg_entry.entity_id)
-    # Geräte entfernter Packungen
+    # Devices of removed packs
     devices = dr.async_get(hass)
     known = {*manager.meds, *manager.persons}
     for device in dr.async_entries_for_config_entry(devices, entry.entry_id):

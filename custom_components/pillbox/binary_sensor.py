@@ -1,4 +1,4 @@
-"""Vorrat niedrig und „Heute komplett“ (alle Einnahmen des Tages erledigt)."""
+"""Low stock and "complete today" (all intakes of the day done)."""
 from __future__ import annotations
 
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity

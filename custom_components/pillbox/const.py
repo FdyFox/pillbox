@@ -1,4 +1,4 @@
-"""Konstanten für Pillbox."""
+"""Constants for Pillbox."""
 from __future__ import annotations
 
 from homeassistant.const import Platform
@@ -9,39 +9,39 @@ PLATFORMS = [Platform.NUMBER, Platform.SWITCH, Platform.SENSOR, Platform.BINARY_
 STORAGE_KEY = f"{DOMAIN}.state"
 STORAGE_VERSION = 1
 
-SUBENTRY_MEDICATION = "medication"  # ein Medikament mit einer Packung je Wirkstärke
-SUBENTRY_PERSON = "person"  # alle Personen (je Person ein Gerät, eigener NFC-Tag)
+SUBENTRY_MEDICATION = "medication"  # a medication with one pack per strength
+SUBENTRY_PERSON = "person"  # all people (one device each, own NFC tag)
 
-# Medikament
+# Medication
 CONF_TAG_ID = "tag_id"
 CONF_STOCK = "stock"
-CONF_STRENGTH = "strength"  # z. B. "10 mg", nur Anzeige
+CONF_STRENGTH = "strength"  # e.g. "10 mg", display only
 CONF_TABLETS_PER_INTAKE = "tablets_per_intake"
-CONF_INTAKES = "intakes"  # Liste von Einnahme-Schlüsseln "<zeit-id>|<person-id>" (Person leer = ohne Person)
+CONF_INTAKES = "intakes"  # list of intake keys "<slot-id>|<person-id>" (empty person = no person)
 CONF_LOW_THRESHOLD = "low_threshold"
 SECTION_ADVANCED = "advanced"
-CONF_PACKS = "packs"  # Liste der Packungen (je Wirkstärke) eines Medikaments
-CONF_PACK_ID = "id"  # stabile id einer Packung (Store, unique_id, Gerät)
-CONF_STRENGTHS = "strengths"  # nur im Formular: Liste der Wirkstärken
-# Personen: eine Untereinheit „Personen“ mit Liste; jede Person ist ein Gerät
+CONF_PACKS = "packs"  # list of packs (one per strength) of a medication
+CONF_PACK_ID = "id"  # stable id of a pack or person (store, unique_id, device)
+CONF_STRENGTHS = "strengths"  # form only: list of strengths
+# People: one "People" subentry with a list; each person is a device
 CONF_PERSONS = "persons"
-CONF_HA_PERSON = "ha_person"  # optional: person.* aus HA
+CONF_HA_PERSON = "ha_person"  # optional: person.* entity from HA
 PERSONS_TITLE = {"de": "Personen", "en": "People"}
-# Pillbox-Optionen: Einnahme-Zeiten des Tages, id ("1".."6") -> Name; Reihenfolge = id
+# Pillbox options: times of day, id ("1".."6") -> name; order = id
 CONF_SLOTS = "slots"
 MAX_SLOTS = 6
 
-# Alte Felder (v0.1-dev), nur noch zum Übernehmen bestehender Einträge
+# Old fields (v0.1-dev), only used to migrate existing entries
 CONF_INTAKES_PER_DAY = "intakes_per_day"
 LEGACY_FIELDS = (CONF_INTAKES_PER_DAY, "reminder_weekday", "reminder_weekend", "notify_action")
 
 DEFAULT_LOW_THRESHOLD = 20
-# Standard-Einnahme-Zeiten je nach HA-Sprache
+# Default times of day depending on the HA language
 SLOT_DEFAULTS = {
     "de": ["Morgens", "Mittags", "Abends", "Nachts"],
     "en": ["Morning", "Noon", "Evening", "Night"],
 }
-DAY_RESET_HOUR = 4  # Tageswechsel für "heute genommen" (Einnahme nach Mitternacht zählt noch zum Vortag)
+DAY_RESET_HOUR = 4  # day change for "taken today" (an intake after midnight still counts for the previous day)
 
 EVENT_TAG_SCANNED = "tag_scanned"
 SERVICE_TAKE = "take"
@@ -50,7 +50,7 @@ EVENT_LOW_STOCK = f"{DOMAIN}_low_stock"
 
 
 def signal(entry_id: str, subentry_id: str) -> str:
-    """Dispatcher-Signal, auf das die Entitäten eines Medikaments bzw. einer Person hören."""
+    """Dispatcher signal the entities of a pack or person listen to."""
     return f"{DOMAIN}_{entry_id}_{subentry_id}_update"
 
 
@@ -63,7 +63,7 @@ def default_slots(language: str | None) -> dict[str, str]:
 
 
 def ordered_slots(slots: dict[str, str]) -> list[tuple[str, str]]:
-    """(id, Name) in Tagesreihenfolge."""
+    """(id, name) in order of the day."""
     return sorted(slots.items(), key=lambda kv: int(kv[0]))
 
 
@@ -77,7 +77,7 @@ def parse_key(key: str) -> tuple[str, str | None]:
 
 
 def legacy_intake_names(data: dict, language: str | None) -> list[str]:
-    """Einnahme-Namen aus alten Einträgen (freie Namen je Medikament oder nur eine Anzahl)."""
+    """Intake names from old entries (free names per medication or just a count)."""
     if names := data.get(CONF_INTAKES):
         return [str(n) for n in names]
     count = max(1, int(data.get(CONF_INTAKES_PER_DAY, 1)))

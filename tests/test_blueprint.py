@@ -1,4 +1,4 @@
-"""Erinnerungs-Blueprint als echte Automation in HA ausführen."""
+"""Run the reminder blueprint as a real automation in HA."""
 import asyncio
 import shutil
 from datetime import datetime
@@ -71,7 +71,7 @@ async def _setup(hass, tmp_path, freezer, start: str, repeat: int = 60, last: st
 
 
 async def _settle(hass):
-    """Ein paar Loop-Runden statt async_block_till_done (das auf die wartende Automation warten würde)."""
+    """A few loop iterations instead of async_block_till_done (which would wait for the waiting automation)."""
     for _ in range(20):
         await asyncio.sleep(0)
 
@@ -83,7 +83,7 @@ async def _tick(hass, freezer, s: str):
 
 
 async def test_reminds_repeats_and_take_button(hass, tmp_path, freezer):
-    # 2026-11-18 ist ein Mittwoch.
+    # 2026-11-18 is a Wednesday.
     calls = await _setup(hass, tmp_path, freezer, "2026-11-18 07:59:00")
     await _tick(hass, freezer, "2026-11-18 08:00:00")
     assert len(calls) == 1
@@ -92,13 +92,13 @@ async def test_reminds_repeats_and_take_button(hass, tmp_path, freezer):
     assert calls[0].data["data"]["actions"][0]["action"] == f"PILLBOX_{SWITCH}"
 
     await _tick(hass, freezer, "2026-11-18 09:00:01")
-    assert len(calls) == 2  # Wiederholung nach 60 min
+    assert len(calls) == 2  # repeated after 60 min
 
     hass.bus.async_fire("mobile_app_notification_action", {"action": f"PILLBOX_{SWITCH}"})
     await _settle(hass)
     assert hass.states.get(SWITCH).state == "on"
     assert hass.states.get("number.magnesium_stock").state == "19"
-    # Erinnerung wird vom Handy entfernt, danach keine weitere.
+    # The reminder is removed from the phone, no further ones.
     assert calls[-1].data["message"] == "clear_notification"
     n = len(calls)
     await _tick(hass, freezer, "2026-11-18 10:00:01")
@@ -106,7 +106,7 @@ async def test_reminds_repeats_and_take_button(hass, tmp_path, freezer):
 
 
 async def test_weekend_time_and_no_reminder_if_taken(hass, tmp_path, freezer):
-    # 2026-11-21 ist ein Samstag: 08:00 nichts, 10:00 Erinnerung.
+    # 2026-11-21 is a Saturday: nothing at 08:00, reminder at 10:00.
     calls = await _setup(hass, tmp_path, freezer, "2026-11-21 07:59:00")
     await _tick(hass, freezer, "2026-11-21 08:00:00")
     assert calls == []
@@ -121,4 +121,4 @@ async def test_stops_after_last_reminder(hass, tmp_path, freezer):
     await _tick(hass, freezer, "2026-11-18 08:00:00")
     assert len(calls) == 1
     await _tick(hass, freezer, "2026-11-18 09:00:01")
-    assert len(calls) == 1  # nächste Erinnerung läge nach 08:30
+    assert len(calls) == 1  # next reminder would be after 08:30

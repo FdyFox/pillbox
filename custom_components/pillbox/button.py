@@ -1,4 +1,4 @@
-"""Einnahme erfassen: je Medikament (nächste offene) und je Person (wie der Tag der Person)."""
+"""Record intakes: per pack (next open one) and per person (like the person's tag)."""
 from __future__ import annotations
 
 from homeassistant.components.button import ButtonEntity
@@ -24,7 +24,7 @@ class TakeButton(PillboxEntity, ButtonEntity):
 
 
 class PersonTakeButton(PersonEntity, ButtonEntity):
-    """Alle Einnahmen der Person zur nächsten offenen Einnahme-Zeit abhaken."""
+    """Check off all of the person's intakes at the next open time of day."""
 
     _attr_icon = "mdi:account-check"
 

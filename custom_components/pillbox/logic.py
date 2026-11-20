@@ -1,4 +1,4 @@
-"""Reine Kernlogik (ohne Home-Assistant-Abhängigkeit, dadurch einzeln testbar)."""
+"""Pure core logic (no Home Assistant dependency, so it can be tested on its own)."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -7,19 +7,19 @@ from datetime import date, timedelta
 
 @dataclass
 class Medication:
-    """Ein Medikament mit Vorrat und benannten Einnahmen pro Tag (z. B. Morgens, Abends)."""
+    """A pack with stock and named intakes per day (e.g. morning, evening)."""
 
     name: str
     stock: int
     intakes: list[str] = field(default_factory=lambda: ["Morgens"])
     tablets_per_intake: int = 1
     low_threshold: int = 20
-    taken: list[bool] = field(default_factory=list)  # je Einnahme: heute erledigt?
+    taken: list[bool] = field(default_factory=list)  # per intake: done today?
 
     def __post_init__(self) -> None:
         if not self.intakes:
-            raise ValueError("Mindestens eine Einnahme nötig")
-        # Gespeicherten Status an die (evtl. geänderte) Zahl der Einnahmen anpassen.
+            raise ValueError("At least one intake is required")
+        # Adapt the stored status to the (possibly changed) number of intakes.
         self.taken = (list(self.taken) + [False] * len(self.intakes))[: len(self.intakes)]
 
     @property
@@ -47,13 +47,13 @@ class Medication:
         return [n for n, t in zip(self.intakes, self.taken) if not t]
 
     def next_open(self) -> int | None:
-        """Index der nächsten offenen Einnahme, None wenn heute alles erledigt ist."""
+        """Index of the next open intake, None if everything is done today."""
         return next((i for i, t in enumerate(self.taken) if not t), None)
 
     def set_intake(self, index: int, taken: bool) -> bool:
-        """Einnahme abhaken (Vorrat runter) oder zurücknehmen (Vorrat wieder hoch).
+        """Check off an intake (stock down) or undo it (stock up again).
 
-        False, wenn sich nichts ändert (schon im gewünschten Zustand).
+        False if nothing changes (already in the requested state).
         """
         if self.taken[index] == taken:
             return False
@@ -65,19 +65,19 @@ class Medication:
         return True
 
     def take(self) -> bool:
-        """Nächste offene Einnahme erfassen. False, wenn heute schon alles genommen ist."""
+        """Record the next open intake. False if everything has been taken today."""
         index = self.next_open()
         return index is not None and self.set_intake(index, True)
 
     def refill(self, stock: int) -> None:
-        """Restmenge nach neuer Packung setzen."""
+        """Set the remaining stock after a new pack."""
         self.stock = max(0, int(stock))
 
     def reset_day(self) -> None:
         self.taken = [False] * len(self.intakes)
 
     def last_covered_day(self, today: date) -> date | None:
-        """Letzter Tag, für den der Vorrat noch reicht (None = heute schon zu knapp)."""
+        """Last day the stock still covers (None = already too low today)."""
         if self.daily_consumption <= 0:
             return None
         need_today = len(self.open_intakes) * self.tablets_per_intake
@@ -86,7 +86,7 @@ class Medication:
         return today + timedelta(days=(self.stock - need_today) // self.daily_consumption)
 
     def days_left(self, today: date) -> int:
-        """Tage, die der Vorrat noch trägt (heute mitgezählt, solange noch offen)."""
+        """Days the stock still lasts (today included while still open)."""
         last = self.last_covered_day(today)
         if last is None:
             return 0

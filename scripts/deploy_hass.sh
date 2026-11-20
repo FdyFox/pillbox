@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Kopiert custom_components/pillbox per rsync auf die Home-Assistant-Instanz (SSH-Add-on).
+# Copies custom_components/pillbox to the Home Assistant instance via rsync (SSH add-on).
 #
-# Aufruf:  scripts/deploy_hass.sh [-n] [-r]
-#   -n  Probelauf: nur anzeigen, was kopiert/gelöscht würde
-#   -r  danach Konfiguration prüfen und HA Core neu starten
+# Usage:  scripts/deploy_hass.sh [-n] [-r]
+#   -n  dry run: only show what would be copied/deleted
+#   -r  afterwards check the configuration and restart HA Core
 #
-# Anpassbar per Umgebungsvariable oder .env im Repo (Vorlage: .env.example):
-#   HASS_HOST, HASS_USER, HASS_PORT, HASS_SSH_KEY (Pfad zum privaten Schlüssel),
-#   optional HASS_PASSWORD (braucht sshpass, nur ohne Schlüssel)
+# Configurable via environment variables or .env in the repo (template: .env.example):
+#   HASS_HOST, HASS_USER, HASS_PORT, HASS_SSH_KEY (path to the private key),
+#   optional HASS_PASSWORD (requires sshpass, only without a key)
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -35,35 +35,35 @@ while getopts "nrh" opt; do
   esac
 done
 
-# Eine SSH-Verbindung für alle Schritte, damit das Passwort nur einmal abgefragt wird.
+# One SSH connection for all steps, so the password is only asked once.
 control="$(mktemp -u "${TMPDIR:-/tmp}/deploy_hass.XXXXXX")"
 ssh_opts=(-p "$HASS_PORT" -o ControlMaster=auto -o ControlPath="$control" -o ControlPersist=60)
 if [[ -n "${HASS_SSH_KEY:-}" ]]; then
   HASS_SSH_KEY="${HASS_SSH_KEY/#\~/$HOME}"
-  [[ -f "$HASS_SSH_KEY" ]] || { echo "Fehler: Schlüssel $HASS_SSH_KEY nicht gefunden." >&2; exit 1; }
+  [[ -f "$HASS_SSH_KEY" ]] || { echo "Error: key $HASS_SSH_KEY not found." >&2; exit 1; }
   ssh_opts+=(-i "$HASS_SSH_KEY" -o IdentitiesOnly=yes)
 fi
 trap 'ssh "${ssh_opts[@]}" -O exit "$HASS_USER@$HASS_HOST" 2>/dev/null || true' EXIT
 remote() { ssh "${ssh_opts[@]}" "$HASS_USER@$HASS_HOST" "$@"; }
 
-# Verbindung aufbauen; alle folgenden ssh/rsync-Aufrufe nutzen sie mit.
+# Open the connection; all following ssh/rsync calls reuse it.
 if [[ -n "${HASS_PASSWORD:-}" ]]; then
-  command -v sshpass >/dev/null || { echo "Fehler: HASS_PASSWORD gesetzt, aber sshpass fehlt (sudo apt install sshpass)." >&2; exit 1; }
+  command -v sshpass >/dev/null || { echo "Error: HASS_PASSWORD is set, but sshpass is missing (sudo apt install sshpass)." >&2; exit 1; }
   SSHPASS="$HASS_PASSWORD" sshpass -e ssh "${ssh_opts[@]}" -MNf "$HASS_USER@$HASS_HOST"
 else
   ssh "${ssh_opts[@]}" -MNf "$HASS_USER@$HASS_HOST"
 fi
 
 if ! remote 'command -v rsync >/dev/null'; then
-  echo "Fehler: rsync fehlt auf $HASS_HOST. Im SSH-Add-on unter 'packages' rsync eintragen." >&2
+  echo "Error: rsync is missing on $HASS_HOST. Add rsync under 'packages' in the SSH add-on." >&2
   exit 1
 fi
 
-# /config gehört root -> als Nicht-root-User (z. B. hassio) per sudo schreiben.
+# /config belongs to root -> write via sudo when logged in as a non-root user (e.g. hassio).
 sudo=""
 [[ "$HASS_USER" != root ]] && sudo="sudo -n"
 
-# ha-CLI braucht das Supervisor-Token aus der Umgebung des Add-ons.
+# The ha CLI needs the supervisor token from the add-on environment.
 ha_cmd() {
   remote "$sudo sh -c 'SUPERVISOR_TOKEN=\$(cat /run/s6/container_environment/SUPERVISOR_TOKEN) ha $*'"
 }
@@ -75,15 +75,15 @@ rsync -avz --delete --no-owner --no-group $dry_run \
   "$SRC" "$HASS_USER@$HASS_HOST:$DEST"
 
 if [[ -n "$dry_run" ]]; then
-  echo "Probelauf, nichts geändert."
+  echo "Dry run, nothing changed."
   exit 0
 fi
 
 if (( restart )); then
-  echo "Prüfe Konfiguration ..."
+  echo "Checking configuration ..."
   ha_cmd core check
-  echo "Starte HA Core neu ..."
+  echo "Restarting HA Core ..."
   ha_cmd core restart
 else
-  echo "Fertig. Für die Änderungen HA neu starten (oder erneut mit -r aufrufen)."
+  echo "Done. Restart HA for the changes to take effect (or run again with -r)."
 fi

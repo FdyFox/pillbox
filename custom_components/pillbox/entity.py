@@ -1,4 +1,4 @@
-"""Gemeinsame Basis für alle Pillbox-Entitäten (ein Gerät je Medikament und je Person)."""
+"""Common base for all Pillbox entities (one device per pack and per person)."""
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
@@ -55,7 +55,7 @@ def person_device_info(manager: PillboxManager, person_id: str) -> DeviceInfo:
 
 
 class PillboxEntity(_BaseEntity):
-    """Entität einer Packung; `sub_id` ist hier die Packungs-id (ein Gerät je Packung)."""
+    """Entity of a pack; `sub_id` is the pack id here (one device per pack)."""
 
     def __init__(self, manager: PillboxManager, sub_id: str, key: str) -> None:
         super().__init__(manager, sub_id, key)
@@ -67,7 +67,7 @@ class PillboxEntity(_BaseEntity):
 
 
 class PersonEntity(_BaseEntity):
-    """Entität einer Person."""
+    """Entity of a person."""
 
     def __init__(self, manager: PillboxManager, sub_id: str, key: str) -> None:
         super().__init__(manager, sub_id, key)
@@ -83,7 +83,7 @@ def add_per_medication(
     async_add_entities: AddConfigEntryEntitiesCallback,
     factory: Callable[[PillboxManager, str], Iterable[Entity]],
 ) -> None:
-    """Entitäten je Packung anlegen und der Untereinheit ihres Medikaments zuordnen."""
+    """Create entities per pack and assign them to the subentry of their medication."""
     manager = entry.runtime_data
     for pack_id in manager.meds:
         async_add_entities(factory(manager, pack_id), config_subentry_id=manager.info[pack_id].sub_id)
@@ -94,7 +94,7 @@ def add_per_person(
     async_add_entities: AddConfigEntryEntitiesCallback,
     factory: Callable[[PillboxManager, str], Iterable[Entity]],
 ) -> None:
-    """Entitäten je Person anlegen und der jeweiligen Untereinheit zuordnen."""
+    """Create entities per person and assign them to the people subentry."""
     manager = entry.runtime_data
     for person_id, person in manager.persons.items():
         async_add_entities(factory(manager, person_id), config_subentry_id=person.sub_id)

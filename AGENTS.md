@@ -1,34 +1,36 @@
 # AGENTS.md
 
-Hinweise für KI-Agenten (und Menschen), die an Pillbox arbeiten.
+Notes for AI agents (and humans) working on Pillbox.
 
-## Projekt
+## Project
 
-Home-Assistant-Integration (HACS) für Medikamentenvorrat und Einnahmen. Fachliches Modell, Entitäten und Bedienung stehen in der [README](README.md).
+Home Assistant integration (HACS) for medication stock and intakes. The domain model, entities and usage are described in the [README](README.md).
 
-- `custom_components/pillbox/logic.py`: reine Logik ohne HA-Abhängigkeit (Vorrat, Reichweite, Einnahmen).
-- `custom_components/pillbox/__init__.py`: `PillboxManager` (Laden, Speichern, Tag-Scans, Tageswechsel) und `_async_migrate` (Übernahme älterer Einträge).
-- `custom_components/pillbox/config_flow.py`: Pillbox-Eintrag mit Optionen (Einnahme-Zeiten) und Untereinheiten „Personen“ und „Medikament“ (mit Packungen).
-- Plattformen: `number`, `sensor`, `binary_sensor`, `switch`, `button`; gemeinsame Basis in `entity.py`.
-- `blueprints/automation/pillbox/intake_reminder.yaml`: Erinnerungs-Blueprint.
-- `tests/`: Logik-, Integrations- und Blueprint-Tests gegen ein echtes HA.
+- `custom_components/pillbox/logic.py`: pure logic without HA dependencies (stock, coverage, intakes).
+- `custom_components/pillbox/__init__.py`: `PillboxManager` (load, save, tag scans, day change) and `_async_migrate` (migration of older entries).
+- `custom_components/pillbox/config_flow.py`: Pillbox entry with options (times of day) and the subentries "People" and "Medication" (with packs).
+- Platforms: `number`, `sensor`, `binary_sensor`, `switch`, `button`; common base in `entity.py`.
+- `blueprints/automation/pillbox/intake_reminder.yaml`: reminder blueprint.
+- `tests/`: logic, integration and blueprint tests against a real HA.
 
-## Regeln
+## Rules
 
-1. **README aktuell halten.** Jede Änderung an Verhalten, Formularen, Entitäten, Events, Blueprint, Installation oder Entwicklung wird im selben Commit in der README nachgezogen. Der KI-Hinweis oben in der README bleibt stehen.
-2. **Keine persönlichen Daten.** Das Repo ist öffentlich. Keine echten Namen von Personen, keine echten Medikamente, Geräte, Hostnamen, IP-Adressen oder E-Mail-Adressen, weder in Code, Kommentaren, Tests, Doku noch Commit-Messages. Beispiele nur neutral: Personen „Anna“ und „Ben“, Medikamente „Magnesium“ und „Vitamin D“, Benachrichtigung `notify.mobile_app_handy`, Host `homeassistant.local`. Vor jedem Commit prüfen, z. B. mit `git diff --cached`.
-3. **Entitäts-IDs nie brechen.** `unique_id`s bleiben stabil: Packungen und Personen behalten ihre id, auch wenn Einträge zusammengeführt oder umbenannt werden. Beim Umbau von Untereinheiten Entitäten und Geräte umhängen (`_move_to_subentry`), nicht löschen und neu anlegen.
-4. **Ältere Einträge übernehmen.** Ändert sich das Datenformat, eine Übernahme in `_async_migrate` ergänzen und mit einem Test absichern, der vom alten Format ausgeht.
-5. **Tests.** Jede Änderung mit Tests absichern; vor dem Commit muss alles grün sein:
+1. **Keep the README up to date.** Every change to behavior, forms, entities, events, blueprint, installation or development is reflected in the README in the same commit. The AI notice at the top of the README stays.
+2. **No personal data.** The repository is public. No real names of people, no real medications, devices, host names, IP addresses or e-mail addresses, neither in code, comments, tests, docs nor commit messages. Use neutral examples only: people "Anna" and "Ben", medications "Magnesium" and "Vitamin D", notify action `notify.mobile_app_phone`, host `homeassistant.local`. Check before every commit, e.g. with `git diff --cached`.
+3. **Never break entity IDs.** `unique_id`s stay stable: packs and people keep their id, even when entries are merged or renamed. When restructuring subentries, move entities and devices (`_move_to_subentry`) instead of deleting and recreating them.
+4. **Migrate older entries.** When the data format changes, add a migration to `_async_migrate` and cover it with a test that starts from the old format.
+5. **Tests.** Cover every change with tests; everything must pass before committing:
+
    ```bash
    .venv/bin/python -m pytest -q
    uvx ruff check --select F,E9 custom_components tests
    ```
-   Einrichtung der Testumgebung: siehe README, Abschnitt „Entwicklung“.
-6. **Übersetzungen.** Neue Texte in `strings.json`, `translations/en.json` und `translations/de.json` pflegen. Home Assistant lädt Übersetzungen nur beim Start; zum Prüfen HA Core neu starten.
-7. **Sprache.** Code-Kommentare, Docstrings und Doku auf Deutsch; Bezeichner im Code auf Englisch.
-8. **Commits.** Format `typ(): Beschreibung` auf Englisch (z. B. `feat(): …`, `fix(): …`, `docs(): …`, `test(): …`), keine `Co-Authored-By`-Zeilen oder sonstige KI-Attribution in Commits.
 
-## Ausrollen
+   Setting up the test environment: see the README, section "Development".
+6. **Translations.** Maintain new UI texts in `strings.json`, `translations/en.json` and `translations/de.json`. Home Assistant only loads translations on startup; restart HA Core to check them.
+7. **Language.** Code, comments, docstrings, README and other docs in English. The UI is translated into English and German via the translation files.
+8. **Commits.** Format `type(): description` in English (e.g. `feat(): …`, `fix(): …`, `docs(): …`, `test(): …`), no `Co-Authored-By` lines or other AI attribution in commits.
 
-`scripts/deploy_hass.sh` kopiert die Integration per rsync auf eine HA-Instanz (Zugang in `.env`, Vorlage `.env.example`; `.env` nie committen). Ausrollen auf die produktive Instanz übernimmt der Maintainer.
+## Deployment
+
+`scripts/deploy_hass.sh` copies the integration to an HA instance via rsync (access in `.env`, template `.env.example`; never commit `.env`). Deploying to the production instance is done by the maintainer.

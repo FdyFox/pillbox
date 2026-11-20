@@ -1,8 +1,8 @@
-"""Config-Flow.
+"""Config flow.
 
-- Ein Eintrag „Pillbox“; seine Optionen legen die Einnahme-Zeiten des Tages fest (Morgens, Mittags, …).
-- Untereinheit „Person“: wer etwas einnimmt, optional mit eigenem NFC-Tag.
-- Untereinheit „Medikament“: eine Packung mit Vorrat; Einnahmen = Einnahme-Zeit × (optional) Person.
+- One "Pillbox" entry; its options define the times of day (morning, noon, ...).
+- Subentry "People": everyone who takes something, each optionally with their own NFC tag.
+- Subentry "Medication": one pack with stock per strength; intakes = time of day x (optional) person.
 """
 from __future__ import annotations
 
@@ -58,7 +58,7 @@ _ADVANCED_FIELDS = (CONF_TABLETS_PER_INTAKE, CONF_LOW_THRESHOLD)
 _INT_FIELDS = (CONF_STOCK, CONF_TABLETS_PER_INTAKE, CONF_LOW_THRESHOLD)
 
 
-# --- Hilfen -----------------------------------------------------------------
+# --- Helpers ----------------------------------------------------------------
 
 
 def _slots(entry: ConfigEntry, hass: HomeAssistant) -> dict[str, str]:
@@ -66,7 +66,7 @@ def _slots(entry: ConfigEntry, hass: HomeAssistant) -> dict[str, str]:
 
 
 def _persons(entry: ConfigEntry) -> list[tuple[str, str]]:
-    """(Personen-id, Name) aller Personen, alphabetisch."""
+    """(person id, name) of all people, alphabetically."""
     return sorted(
         (
             (p[CONF_PACK_ID], p[CONF_NAME])
@@ -79,7 +79,7 @@ def _persons(entry: ConfigEntry) -> list[tuple[str, str]]:
 
 
 def _tag_in_use(entry: ConfigEntry, tag: str | None, own_subentry_id: str | None) -> bool:
-    """Ist der Tag schon einer anderen Person oder einem anderen Medikament zugeordnet?"""
+    """Is the tag already assigned to another person or pack?"""
     if not tag:
         return False
     for sid, sub in entry.subentries.items():
@@ -93,7 +93,7 @@ def _tag_in_use(entry: ConfigEntry, tag: str | None, own_subentry_id: str | None
 
 
 def _tag_selector(hass: HomeAssistant) -> selector.SelectSelector:
-    """Dropdown mit allen in HA bekannten NFC-Tags (Name -> Tag-ID), eigene Eingabe erlaubt."""
+    """Dropdown with all NFC tags known to HA (name -> tag ID); custom input allowed."""
     options = sorted(
         (
             selector.SelectOptionDict(value=e.unique_id, label=e.name or e.original_name or e.unique_id)
@@ -112,9 +112,9 @@ def _tag_selector(hass: HomeAssistant) -> selector.SelectSelector:
 def _intake_options(
     slots: dict[str, str], persons: list[tuple[str, str]], selected: list[str] | None = None
 ) -> list[selector.SelectOptionDict]:
-    """Wählbare Einnahmen: je Einnahme-Zeit und Person.
+    """Selectable intakes: per time of day and person.
 
-    Einnahmen ohne Person gibt es nur, solange keine Personen angelegt sind (oder eine schon gewählt ist).
+    Intakes without a person are only offered while no people exist (or if one is already selected).
     """
     selected = selected or []
     options: list[selector.SelectOptionDict] = []
@@ -128,7 +128,7 @@ def _intake_options(
     return options
 
 
-# --- Pillbox-Eintrag --------------------------------------------------------
+# --- Pillbox entry ----------------------------------------------------------
 
 
 class PillboxConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -155,7 +155,7 @@ class PillboxConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class PillboxOptionsFlow(OptionsFlow):
-    """Einnahme-Zeiten des Tages: bis zu MAX_SLOTS Namen, Reihenfolge = Tagesablauf."""
+    """Times of day: up to MAX_SLOTS names, order = order of the day."""
 
     async def async_step_init(self, user_input=None) -> ConfigFlowResult:
         slots = _slots(self.config_entry, self.hass)
@@ -191,10 +191,10 @@ class PillboxOptionsFlow(OptionsFlow):
         return self.async_show_form(step_id="init", data_schema=schema, errors=errors)
 
 
-# --- Personen ---------------------------------------------------------------
+# --- People -----------------------------------------------------------------
 #
-# Eine Untereinheit „Personen“ für alle; jede Person wird ein Gerät darunter.
-# Schritt 1: Liste der Personen. Schritt 2 („person“): je Person Name, HA-Person, Tag.
+# One "People" subentry for everyone; each person becomes a device below it.
+# Step 1: list of people. Step 2 ("person"): name, HA person and tag per person.
 
 
 def _persons_schema(existing: list[str]) -> vol.Schema:
@@ -220,11 +220,11 @@ def _person_schema(hass: HomeAssistant) -> vol.Schema:
 
 
 class PersonSubentryFlow(ConfigSubentryFlow):
-    """Personen anlegen oder ändern (alle in einer Untereinheit)."""
+    """Create or edit people (all in one subentry)."""
 
     def __init__(self) -> None:
         self._names: list[str] = []
-        self._existing: dict[str, dict[str, Any]] = {}  # Name (casefold) -> gespeicherte Person
+        self._existing: dict[str, dict[str, Any]] = {}  # name (casefold) -> stored person
         self._persons: list[dict[str, Any]] = []
         self._reconfigure = False
 
@@ -264,7 +264,7 @@ class PersonSubentryFlow(ConfigSubentryFlow):
         return await self._async_step_persons("reconfigure", user_input, suggested)
 
     async def async_step_person(self, user_input=None) -> SubentryFlowResult:
-        """Eine Person bearbeiten (Name änderbar, die Zuordnung zu Einnahmen bleibt)."""
+        """Edit one person (name can change; their intakes are kept)."""
         name = self._names[len(self._persons)]
         existing = self._existing.get(name.casefold())
         errors: dict[str, str] = {}
@@ -316,10 +316,10 @@ class PersonSubentryFlow(ConfigSubentryFlow):
         return self.async_create_entry(title=title, data=data)
 
 
-# --- Medikament -------------------------------------------------------------
+# --- Medication -------------------------------------------------------------
 #
-# Schritt 1 („user“ bzw. „reconfigure“): Name und Wirkstärken.
-# Schritt 2 („pack“): je Wirkstärke eine Seite mit Vorrat, Einnahmen, Tag und Dosierung.
+# Step 1 ("user" or "reconfigure"): name and strengths.
+# Step 2 ("pack"): one page per strength with stock, intakes, tag and dosage.
 
 
 def _medication_schema(entry: ConfigEntry) -> vol.Schema:
@@ -347,7 +347,7 @@ def _medication_schema(entry: ConfigEntry) -> vol.Schema:
 def _pack_schema(hass: HomeAssistant, entry: ConfigEntry, selected: list[str] | None = None) -> vol.Schema:
     slots = _slots(entry, hass)
     persons = _persons(entry)
-    # Ohne Personen: erste Einnahme-Zeit vorbelegen; mit Personen bewusst auswählen lassen.
+    # Without people: preselect the first time of day; with people, let the user choose.
     default = [] if persons else [make_key(ordered_slots(slots)[0][0], None)]
     return vol.Schema(
         {
@@ -357,7 +357,7 @@ def _pack_schema(hass: HomeAssistant, entry: ConfigEntry, selected: list[str] | 
                     options=_intake_options(slots, persons, selected),
                     multiple=True,
                     sort=False,
-                    mode=selector.SelectSelectorMode.DROPDOWN,  # Chips statt langer Häkchen-Liste
+                    mode=selector.SelectSelectorMode.DROPDOWN,  # chips instead of a long checkbox list
                 )
             ),
             vol.Optional(CONF_TAG_ID): _tag_selector(hass),
@@ -375,19 +375,19 @@ def _pack_schema(hass: HomeAssistant, entry: ConfigEntry, selected: list[str] | 
 
 
 def _pack_suggested(pack: dict[str, Any]) -> dict[str, Any]:
-    """Gespeicherte (flache) Packung als Vorbelegung fürs Formular, Abschnitt verschachtelt."""
+    """Stored (flat) pack as form defaults, with the section nested."""
     values = {k: v for k, v in pack.items() if k not in (*_ADVANCED_FIELDS, CONF_PACK_ID, CONF_STRENGTH)}
     values[SECTION_ADVANCED] = {k: pack[k] for k in _ADVANCED_FIELDS if k in pack}
     return values
 
 
 class MedicationSubentryFlow(ConfigSubentryFlow):
-    """Medikament anlegen oder ändern; eine Packung (Gerät) je Wirkstärke."""
+    """Create or edit a medication; one pack (device) per strength."""
 
     def __init__(self) -> None:
         self._name = ""
         self._strengths: list[str] = []
-        self._existing: dict[str, dict[str, Any]] = {}  # Wirkstärke (casefold) -> gespeicherte Packung
+        self._existing: dict[str, dict[str, Any]] = {}  # strength (casefold) -> stored pack
         self._packs: list[dict[str, Any]] = []
         self._reconfigure = False
 
@@ -429,7 +429,7 @@ class MedicationSubentryFlow(ConfigSubentryFlow):
         return await self._async_step_medication("reconfigure", user_input, suggested)
 
     async def async_step_pack(self, user_input=None) -> SubentryFlowResult:
-        """Eine Packung (Wirkstärke) bearbeiten; danach die nächste oder fertig."""
+        """Edit one pack (strength); then the next one or finish."""
         strength = self._strengths[len(self._packs)]
         existing = self._existing.get(strength.casefold())
         entry = self._get_entry()
@@ -441,7 +441,7 @@ class MedicationSubentryFlow(ConfigSubentryFlow):
             pack.update(user_input.get(SECTION_ADVANCED, {}))
             for key in _INT_FIELDS:
                 if key in pack:
-                    pack[key] = int(pack[key])  # NumberSelector liefert float
+                    pack[key] = int(pack[key])  # NumberSelector returns float
             pack[CONF_INTAKES] = list(dict.fromkeys(pack.get(CONF_INTAKES, [])))
             tag = pack.get(CONF_TAG_ID)
             if not pack[CONF_INTAKES]:

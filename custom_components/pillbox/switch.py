@@ -1,10 +1,10 @@
-"""Ein Schalter je Einnahme.
+"""One switch per intake.
 
-Einnahmen einer Person hängen am Gerät der Person (z. B. „Anna“ → „Magnesium 10 mg Morgens“),
-damit dort sichtbar ist, was sie heute noch nehmen muss. Einnahmen ohne Person hängen an der Packung.
+A person's intakes belong to the person's device (e.g. "Anna" -> "Magnesium 10 mg Morning"),
+so it shows what they still need to take today. Intakes without a person belong to the pack.
 
-An = Einnahme erledigt, Vorrat sinkt um „Tabletten pro Einnahme“.
-Aus = zurückgenommen (z. B. versehentlich abgehakt), die Tabletten kommen zurück in den Vorrat.
+On = intake done, stock drops by "tablets per intake".
+Off = undone (e.g. checked off by mistake), the tablets go back into stock.
 """
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ async def async_setup_entry(
     for pack_id, med in manager.meds.items():
         for key in med.intakes:
             person_id = parse_key(key)[1]
-            # Der Untereinheit zuordnen, an deren Gerät der Schalter hängt (Personen oder Medikament).
+            # Assign to the subentry whose device the switch belongs to (people or medication).
             subentry = manager.persons[person_id].sub_id if person_id else manager.info[pack_id].sub_id
             async_add_entities([IntakeSwitch(manager, pack_id, key)], config_subentry_id=subentry)
 

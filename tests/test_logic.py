@@ -1,4 +1,4 @@
-"""Tests für die Kernlogik. Ausführen: python -m pytest -q"""
+"""Tests for the core logic. Run: python -m pytest -q"""
 import sys
 from datetime import date
 from pathlib import Path
@@ -69,7 +69,7 @@ def test_empty_stock():
     m = Medication("Vitamin D", stock=0)
     assert m.last_covered_day(TODAY) is None
     assert m.days_left(TODAY) == 0
-    assert m.take() is True  # Zähler bleibt bei 0
+    assert m.take() is True  # counter stays at 0
     assert m.stock == 0
 
 
@@ -81,12 +81,12 @@ def test_refill():
 
 def test_named_intakes_switch_and_undo():
     m = Medication("Magnesium", stock=10, intakes=["Morgens", "Abends"])
-    assert m.set_intake(1, True) is True  # Abends zuerst
+    assert m.set_intake(1, True) is True  # evening first
     assert m.stock == 9
     assert m.open_intakes == ["Morgens"]
     assert m.next_open() == 0
-    assert m.set_intake(1, True) is False  # schon erledigt, kein zweiter Abzug
-    assert m.set_intake(1, False) is True  # zurücknehmen -> Tablette zurück
+    assert m.set_intake(1, True) is False  # already done, no second deduction
+    assert m.set_intake(1, False) is True  # undo -> tablet goes back
     assert m.stock == 10
     assert m.taken_today == 0
 

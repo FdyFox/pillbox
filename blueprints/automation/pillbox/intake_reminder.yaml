@@ -146,7 +146,7 @@ actions:
                       to: "on"
                   timeout:
                     minutes: "{{ repeat_minutes | int }}"
-      # Erledigt -> Erinnerung vom Handy entfernen.
+      # Done -> remove the reminder from the phone.
       - if:
           - condition: state
             entity_id: !input intake_switch
