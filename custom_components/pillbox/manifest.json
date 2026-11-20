@@ -1,7 +1,13 @@
 {
   "domain": "pillbox",
   "name": "Pillbox",
-  "codeowners": ["@FdyFox"],
+  "after_dependencies": [
+    "frontend",
+    "http"
+  ],
+  "codeowners": [
+    "@FdyFox"
+  ],
   "config_flow": true,
   "documentation": "https://github.com/FdyFox/pillbox",
   "integration_type": "service",
