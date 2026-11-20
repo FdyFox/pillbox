@@ -535,3 +535,16 @@ async def test_person_intakes_on_person_device_keep_entity_id(hass, freezer):
     state = hass.states.get(switch.entity_id)
     assert state.attributes["friendly_name"] == "Anna Magnesium 10 mg Morgens"
     assert state.attributes["medication"] == "Magnesium 10 mg"
+
+
+async def test_low_stock_event_on_manual_stock_change(hass, entry, freezer):
+    """Lowering the stock by hand below the threshold fires the event once."""
+    freezer.move_to(_at("2026-11-18 09:00:00"))
+    events = []
+    hass.bus.async_listen(f"{DOMAIN}_low_stock", events.append)
+    await _setup(hass, entry)
+    await _call(hass, "number", "set_value", "number.vitamin_d_stock", value=19)
+    await _call(hass, "number", "set_value", "number.vitamin_d_stock", value=18)
+    await _call(hass, "number", "set_value", "number.vitamin_d_stock", value=40)
+    await _call(hass, "number", "set_value", "number.vitamin_d_stock", value=10)
+    assert [e.data for e in events] == [{"medication": "Vitamin D"}, {"medication": "Vitamin D"}]

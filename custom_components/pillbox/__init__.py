@@ -315,9 +315,14 @@ class PillboxManager:
         return await self._async_change({sub_id: lambda m: m.set_intake(m.intakes.index(key), taken)})
 
     async def async_refill(self, sub_id: str, stock: int) -> None:
-        self.meds[sub_id].refill(stock)
-        await self.async_save()
-        self._notify([sub_id])
+        """Set the stock (number entity, refill service, card buttons); fires low_stock when crossing the threshold."""
+
+        def change(med: Medication) -> bool:
+            before = med.stock
+            med.refill(stock)
+            return med.stock != before
+
+        await self._async_change({sub_id: change})
 
     @callback
     def async_handle_tag(self, event: Event) -> None:

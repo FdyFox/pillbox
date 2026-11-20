@@ -181,6 +181,41 @@ def test_card_editor_schema():
     """))
     assert form["names"] == [
         "title", "hide_people", "people", "hide_done_people", "hide_take_now",
-        "hide_packs", "packs", "low_stock_only", "packs_sort", "hide_columns",
+        "hide_packs", "packs", "low_stock_only", "packs_sort", "stock_buttons", "stock_step", "hide_columns",
     ]
     assert all(form["labels"])
+
+
+async def test_card_stock_buttons(hass, freezer):
+    quickjs = pytest.importorskip("quickjs")
+    entry = _family_entry(hass)
+    freezer.move_to(_at("2026-11-18 07:30:00"))
+    await _setup(hass, entry)
+    html, _ = await _render(hass, quickjs, entry, {})
+    assert "data-adjust" not in html  # off by default
+
+    html, _ = await _render(hass, quickjs, entry, {"stock_buttons": True, "stock_step": 5})
+    assert 'data-adjust="number.magnesium_10_mg_stock" data-delta="-5"' in html
+    assert 'data-adjust="number.magnesium_10_mg_stock" data-delta="5"' in html
+
+    # Clicks set the stock via the pack's number entity, never below 0.
+    ctx = quickjs.Context()
+    ctx.eval(HARNESS)
+    ctx.eval(CARD_PATH.read_text())
+    calls = json.loads(ctx.eval("""
+      (() => {
+        const card = new (customElements.get("pillbox-card"))();
+        const calls = [];
+        card.setConfig({ stock_buttons: true, stock_step: 5 });
+        card._hass = { states: { "number.a": { state: "30" }, "number.b": { state: "3" } },
+                       callService: (d, s, data) => calls.push([d, s, data]) };
+        const click = (entity, delta) => card._onClick({ target: { closest: () => ({ dataset: { adjust: entity, delta: String(delta) } }) } });
+        click("number.a", 5); click("number.a", -5); click("number.b", -5);
+        return JSON.stringify(calls);
+      })()
+    """))
+    assert calls == [
+        ["number", "set_value", {"entity_id": "number.a", "value": 35}],
+        ["number", "set_value", {"entity_id": "number.a", "value": 25}],
+        ["number", "set_value", {"entity_id": "number.b", "value": 0}],
+    ]

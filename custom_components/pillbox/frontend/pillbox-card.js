@@ -14,6 +14,8 @@
  *   low_stock_only: false     # only packs with low stock
  *   packs_sort: name          # name | days_left
  *   hide_columns: []          # stock | days_left | runs_out
+ *   stock_buttons: false      # show -/+ buttons next to the stock of each pack
+ *   stock_step: 1             # tablets per -/+ press
  *
  * Older keys show_people / show_packs are still understood.
  */
@@ -51,6 +53,11 @@ const STRINGS = {
     e_col_stock: "Stock",
     e_col_days_left: "Days left",
     e_col_runs_out: "Lasts until",
+    e_stock_buttons: "Show −/+ buttons for the stock",
+    e_stock_step: "Tablets per −/+ press",
+    h_stock_buttons: "Adjust the stock by hand, e.g. after dropping a tablet or a partial refill",
+    remove: "Remove",
+    add: "Add",
     h_people_select: "Empty = all people, alphabetically",
     h_packs_select: "Empty = all packs",
   },
@@ -86,6 +93,11 @@ const STRINGS = {
     e_col_stock: "Vorrat",
     e_col_days_left: "Reicht noch",
     e_col_runs_out: "Reicht bis",
+    e_stock_buttons: "Knöpfe −/+ für den Vorrat anzeigen",
+    e_stock_step: "Tabletten pro Druck auf −/+",
+    h_stock_buttons: "Vorrat von Hand anpassen, z. B. nach einer verlorenen Tablette oder einer Teilpackung",
+    remove: "Abziehen",
+    add: "Hinzufügen",
     h_people_select: "Leer = alle Personen, alphabetisch",
     h_packs_select: "Leer = alle Packungen",
   },
@@ -109,6 +121,7 @@ const normalizeConfig = (config) => {
     packs: [],
     hide_columns: [],
     packs_sort: "name",
+    stock_step: 1,
     ...c,
   };
 };
@@ -176,6 +189,8 @@ class PillboxCard extends HTMLElement {
                 },
               },
             },
+            { name: "stock_buttons", selector: bool },
+            { name: "stock_step", selector: { number: { min: 1, max: 100, step: 1, mode: "box" } } },
             {
               name: "hide_columns",
               selector: {
@@ -204,8 +219,11 @@ class PillboxCard extends HTMLElement {
           low_stock_only: t("e_low_stock_only"),
           packs_sort: t("e_packs_sort"),
           hide_columns: t("e_hide_columns"),
+          stock_buttons: t("e_stock_buttons"),
+          stock_step: t("e_stock_step"),
         })[schema.name],
-      computeHelper: (schema) => ({ people: t("h_people_select"), packs: t("h_packs_select") })[schema.name],
+      computeHelper: (schema) =>
+        ({ people: t("h_people_select"), packs: t("h_packs_select"), stock_buttons: t("h_stock_buttons") })[schema.name],
     };
   }
 
@@ -273,6 +291,7 @@ class PillboxCard extends HTMLElement {
         deviceId,
         name: this._deviceName(deviceId, stock.state.attributes.friendly_name),
         stock: stock.state.state,
+        stockEntity: stock.entity_id,
         daysLeft: sensor("duration")?.state.state,
         runsOut: sensor("date")?.state.state,
         low: entities.some(
@@ -327,9 +346,15 @@ class PillboxCard extends HTMLElement {
   _renderPack(pack) {
     const hidden = new Set(this._config.hide_columns || []);
     const column = (key, title, value) => (hidden.has(key) ? "" : `<span class="value" title="${title}">${value}</span>`);
+    const step = this._step();
+    const adjust = (delta, label, symbol) =>
+      `<button class="adj" data-adjust="${escapeHtml(pack.stockEntity)}" data-delta="${delta}" title="${label} (${step})" aria-label="${label} ${step}">${symbol}</button>`;
+    const stock = this._config.stock_buttons
+      ? `<span class="stock">${adjust(-step, this._t("remove"), "−")}<span class="value" title="${this._t("stock")}">${escapeHtml(pack.stock)}</span>${adjust(step, this._t("add"), "+")}</span>`
+      : column("stock", this._t("stock"), escapeHtml(pack.stock));
     return `<div class="pack ${pack.low ? "low" : ""}">
         <span class="name">${escapeHtml(pack.name)}</span>
-        ${column("stock", this._t("stock"), escapeHtml(pack.stock))}
+        ${stock}
         ${column("days_left", this._t("daysLeft"), `${escapeHtml(pack.daysLeft ?? "–")} ${this._t("days")}`)}
         ${column("runs_out", this._t("until"), this._formatDate(pack.runsOut))}
         ${pack.low ? `<span class="badge">${this._t("low")}</span>` : ""}
@@ -365,10 +390,21 @@ class PillboxCard extends HTMLElement {
       <ha-card header="${escapeHtml(this._config.title ?? this._t("title"))}"><div class="content">${body}</div></ha-card>`;
   }
 
+  _step() {
+    const step = Math.round(Number(this._config.stock_step));
+    return Number.isFinite(step) && step >= 1 ? step : 1;
+  }
+
   _onClick(ev) {
-    const target = ev.target.closest ? ev.target.closest("[data-toggle],[data-press]") : null;
+    const target = ev.target.closest ? ev.target.closest("[data-toggle],[data-press],[data-adjust]") : null;
     if (!target) return;
-    if (target.dataset.toggle) {
+    if (target.dataset.adjust) {
+      const entityId = target.dataset.adjust;
+      const current = Number(this._hass.states[entityId]?.state);
+      if (!Number.isFinite(current)) return;
+      const value = Math.min(10000, Math.max(0, current + Number(target.dataset.delta)));
+      if (value !== current) this._hass.callService("number", "set_value", { entity_id: entityId, value });
+    } else if (target.dataset.toggle) {
       this._hass.callService("switch", "toggle", { entity_id: target.dataset.toggle });
     } else if (target.dataset.press) {
       this._hass.callService("button", "press", { entity_id: target.dataset.press });
@@ -398,6 +434,9 @@ class PillboxCard extends HTMLElement {
       .pack:last-of-type { border-bottom: none; }
       .pack .value { color: var(--secondary-text-color); font-variant-numeric: tabular-nums; }
       .pack.low .name, .pack.low .value { color: var(--error-color, #db4437); }
+      .stock { display: inline-flex; align-items: center; gap: 4px; }
+      .adj { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--divider-color); background: none; color: var(--primary-text-color); line-height: 1; padding: 0; }
+      .adj:hover { border-color: var(--primary-color); }
       .badge { font-size: 0.8em; border-radius: 10px; padding: 2px 8px; background: var(--error-color, #db4437); color: var(--text-primary-color, #fff); }
       .empty { color: var(--secondary-text-color); }
     `;

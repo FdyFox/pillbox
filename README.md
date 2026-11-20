@@ -153,7 +153,7 @@ data:
 The integration ships a card and loads it automatically; no resource needs to be added. Add it via the card picker ("Pillbox") and set the options in the card editor; no YAML needed.
 
 - **People:** all intakes of the day as chips (done ✓ / open), the next time of day highlighted, and a "Take now" button. Tapping a chip checks the intake off or undoes it.
-- **Packs:** stock, days left and "lasts until"; packs with low stock are shown in red.
+- **Packs:** stock, days left and "lasts until"; packs with low stock are shown in red. Optionally with **−** / **+** buttons for the stock.
 
 Options (all optional, all available in the editor):
 
@@ -169,6 +169,8 @@ Options (all optional, all available in the editor):
 | `low_stock_only` | Only packs with low stock | `false` |
 | `packs_sort` | `name` or `days_left` (shortest first) | `name` |
 | `hide_columns` | Any of `stock`, `days_left`, `runs_out` | none |
+| `stock_buttons` | Show **−** / **+** next to each pack's stock to adjust it by hand (e.g. a dropped tablet, a partial refill). Only changes the stock, not the intakes; the stock column is always shown then | `false` |
+| `stock_step` | Tablets per press on **−** / **+** | `1` |
 
 ```yaml
 type: custom:pillbox-card
@@ -182,7 +184,7 @@ The older keys `show_people` / `show_packs` still work. The card's texts follow 
 
 ## Events
 
-- `pillbox_low_stock` (`medication`, e.g. "Magnesium 10 mg"): when the stock drops below the warning threshold, for your own automations.
+- `pillbox_low_stock` (`medication`, e.g. "Magnesium 10 mg"): when the stock drops below the warning threshold, whether by an intake or a manual change (stock entity, `pillbox.refill`, card buttons), for your own automations.
 - Pillbox listens to `tag_scanned` and compares with the tags of people and packs.
 
 ## Reminder (blueprint)
