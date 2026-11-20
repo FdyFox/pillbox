@@ -1,0 +1,28 @@
+take:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: pillbox
+          multiple: true
+refill:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: pillbox
+          multiple: true
+    add:
+      selector:
+        number:
+          min: 1
+          max: 10000
+          mode: box
+    stock:
+      selector:
+        number:
+          min: 0
+          max: 10000
+          mode: box

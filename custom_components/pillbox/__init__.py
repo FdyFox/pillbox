@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from pathlib import Path
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -17,10 +18,12 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME
 from homeassistant.core import Event, HomeAssistant, callback
-from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.helpers import config_validation as cv, device_registry as dr, entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.storage import Store
+from homeassistant.helpers.typing import ConfigType
+from homeassistant.loader import async_get_integration
 from homeassistant.util import dt as dt_util
 
 from .const import (
@@ -55,6 +58,7 @@ from .const import (
     signal,
 )
 from .logic import Medication
+from .services import async_setup_services
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -63,6 +67,33 @@ MED_ENTITY_KEYS = ("stock", "days_left", "runs_out_on", "taken_count", "low_stoc
 PERSON_ENTITY_KEYS = ("take_now", "open_intakes")
 
 type PillboxConfigEntry = ConfigEntry["PillboxManager"]
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+
+CARD_URL = f"/{DOMAIN}/pillbox-card.js"
+CARD_PATH = Path(__file__).parent / "frontend" / "pillbox-card.js"
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Set up services and the dashboard card (once, independent of config entries)."""
+    async_setup_services(hass)
+    await _async_register_card(hass)
+    return True
+
+
+async def _async_register_card(hass: HomeAssistant) -> None:
+    """Serve pillbox-card.js and load it in the frontend, so no manual resource is needed."""
+    if getattr(hass, "http", None) is None:
+        return  # e.g. in tests without http
+    from homeassistant.components.http import StaticPathConfig  # noqa: PLC0415
+
+    await hass.http.async_register_static_paths([StaticPathConfig(CARD_URL, str(CARD_PATH), True)])
+    if "frontend" in hass.config.components:
+        from homeassistant.components.frontend import add_extra_js_url  # noqa: PLC0415
+
+        version = (await async_get_integration(hass, DOMAIN)).version
+        add_extra_js_url(hass, f"{CARD_URL}?v={version}")  # version busts the browser cache after updates
 
 
 def logical_today(now: datetime | None = None) -> date:
@@ -335,7 +366,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: PillboxConfigEntry) -> b
 
     _async_remove_stale_entities(hass, entry, manager)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    # TODO (v0.2): register services pillbox.take / pillbox.refill (services.yaml)
     return True
 
 

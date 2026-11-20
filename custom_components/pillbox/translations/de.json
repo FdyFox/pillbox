@@ -183,5 +183,43 @@
         "name": "Jetzt einnehmen"
       }
     }
+  },
+  "services": {
+    "take": {
+      "name": "Einnehmen",
+      "description": "Erfasst Einnahmen. Gerät einer Packung: die nächste offene Einnahme der Packung. Gerät einer Person: alle offenen Einnahmen der Person zur nächsten offenen Einnahme-Zeit.",
+      "fields": {
+        "device_id": {
+          "name": "Gerät",
+          "description": "Pillbox-Geräte von Packungen oder Personen."
+        }
+      }
+    },
+    "refill": {
+      "name": "Nachfüllen",
+      "description": "Erhöht den Vorrat einer Packung oder setzt ihn.",
+      "fields": {
+        "device_id": {
+          "name": "Packung",
+          "description": "Pillbox-Geräte von Packungen."
+        },
+        "add": {
+          "name": "Hinzufügen",
+          "description": "Anzahl Tabletten, die dazukommen, z. B. die Größe einer neuen Packung."
+        },
+        "stock": {
+          "name": "Vorrat",
+          "description": "Vorrat auf diese Stückzahl setzen."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "unknown_device": {
+      "message": "Gerät {device_id} ist keine geladene Pillbox-Packung oder -Person."
+    },
+    "not_a_pack": {
+      "message": "Nachfüllen geht nur bei Packungen, nicht bei Personen."
+    }
   }
 }

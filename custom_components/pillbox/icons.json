@@ -1,0 +1,10 @@
+{
+  "services": {
+    "take": {
+      "service": "mdi:pill"
+    },
+    "refill": {
+      "service": "mdi:package-variant-plus"
+    }
+  }
+}

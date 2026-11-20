@@ -183,5 +183,43 @@
         "name": "Take now"
       }
     }
+  },
+  "services": {
+    "take": {
+      "name": "Take",
+      "description": "Records intakes. Pack device: the next open intake of the pack. Person device: all of the person's open intakes at the next open time of day.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "Pillbox pack or person devices."
+        }
+      }
+    },
+    "refill": {
+      "name": "Refill",
+      "description": "Adds tablets to a pack or sets its stock.",
+      "fields": {
+        "device_id": {
+          "name": "Pack",
+          "description": "Pillbox pack devices."
+        },
+        "add": {
+          "name": "Add",
+          "description": "Number of tablets to add, e.g. the size of a new pack."
+        },
+        "stock": {
+          "name": "Stock",
+          "description": "Set the stock to this number of tablets."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "unknown_device": {
+      "message": "Device {device_id} is not a loaded Pillbox pack or person."
+    },
+    "not_a_pack": {
+      "message": "Refill only works on pack devices, not on people."
+    }
   }
 }
