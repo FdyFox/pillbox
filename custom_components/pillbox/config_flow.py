@@ -245,7 +245,7 @@ def _medication_schema(hass: HomeAssistant, entry: ConfigEntry, selected: list[s
                     options=_intake_options(slots, persons, selected),
                     multiple=True,
                     sort=False,
-                    mode=selector.SelectSelectorMode.LIST,
+                    mode=selector.SelectSelectorMode.DROPDOWN,  # Chips statt langer Häkchen-Liste
                 )
             ),
             vol.Optional(CONF_TAG_ID): _tag_selector(hass),
