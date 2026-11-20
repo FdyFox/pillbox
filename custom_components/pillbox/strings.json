@@ -40,43 +40,35 @@
       "step": {
         "user": {
           "title": "Add medication",
+          "description": "Next: one page per strength.",
           "data": {
             "name": "Name",
-            "strength": "Strength",
-            "stock": "Stock (tablets)",
-            "intakes": "Intakes",
-            "tag_id": "NFC tag"
+            "strengths": "Strengths"
           },
           "data_description": {
-            "strength": "Optional, e.g. \"10 mg\". Each strength is its own pack with its own stock.",
-            "stock": "Changing this value overwrites the current stock.",
-            "intakes": "Who takes it when. Times of day are set in the Pillbox options, people via \"Add person\".",
-            "tag_id": "Optional tag on the pack: a scan records the next open intake of this medication."
-          },
-          "sections": {
-            "advanced": {
-              "name": "Dosage and warning",
-              "data": {
-                "tablets_per_intake": "Tablets per intake",
-                "low_threshold": "Low stock threshold"
-              },
-              "data_description": {
-                "low_threshold": "Warn when stock falls below this number of tablets."
-              }
-            }
+            "strengths": "One pack per strength, e.g. \"10 mg\", \"20 mg\". Each pack has its own stock. Leave empty for a single pack."
           }
         },
         "reconfigure": {
           "title": "Edit medication",
+          "description": "Next: one page per strength.",
           "data": {
             "name": "Name",
-            "strength": "Strength",
+            "strengths": "Strengths"
+          },
+          "data_description": {
+            "strengths": "One pack per strength, e.g. \"10 mg\", \"20 mg\". Each pack has its own stock. Leave empty for a single pack."
+          }
+        },
+        "pack": {
+          "title": "{medication}",
+          "description": "Pack {position} of {count}.",
+          "data": {
             "stock": "Stock (tablets)",
             "intakes": "Intakes",
             "tag_id": "NFC tag"
           },
           "data_description": {
-            "strength": "Optional, e.g. \"10 mg\". Each strength is its own pack with its own stock.",
             "stock": "Changing this value overwrites the current stock.",
             "intakes": "Who takes it when. Times of day are set in the Pillbox options, people via \"Add person\".",
             "tag_id": "Optional tag on the pack: a scan records the next open intake of this medication."
@@ -98,7 +90,8 @@
       "error": {
         "no_name": "Please enter a name.",
         "tag_in_use": "This tag is already used by another person or medication.",
-        "no_intakes": "Select at least one intake."
+        "no_intakes": "Select at least one intake.",
+        "duplicate_strengths": "Each strength may appear only once."
       },
       "abort": {
         "reconfigure_successful": "Medication saved."

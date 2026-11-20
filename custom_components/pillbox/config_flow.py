@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 import voluptuous as vol
@@ -27,9 +28,12 @@ from .const import (
     CONF_HA_PERSON,
     CONF_INTAKES,
     CONF_LOW_THRESHOLD,
+    CONF_PACK_ID,
+    CONF_PACKS,
     CONF_SLOTS,
     CONF_STOCK,
     CONF_STRENGTH,
+    CONF_STRENGTHS,
     CONF_TABLETS_PER_INTAKE,
     CONF_TAG_ID,
     DEFAULT_LOW_THRESHOLD,
@@ -71,11 +75,13 @@ def _tag_in_use(entry: ConfigEntry, tag: str | None, own_subentry_id: str | None
     """Ist der Tag schon einer anderen Person oder einem anderen Medikament zugeordnet?"""
     if not tag:
         return False
-    return any(
-        sub.data.get(CONF_TAG_ID) == tag
-        for sid, sub in entry.subentries.items()
-        if sid != own_subentry_id
-    )
+    for sid, sub in entry.subentries.items():
+        if sid == own_subentry_id:
+            continue
+        tags = [sub.data.get(CONF_TAG_ID)] + [p.get(CONF_TAG_ID) for p in sub.data.get(CONF_PACKS, [])]
+        if tag in tags:
+            return True
+    return False
 
 
 def _tag_selector(hass: HomeAssistant) -> selector.SelectSelector:
@@ -156,7 +162,8 @@ class PillboxOptionsFlow(OptionsFlow):
                 parse_key(key)[0]
                 for sub in self.config_entry.subentries.values()
                 if sub.subentry_type == SUBENTRY_MEDICATION
-                for key in sub.data.get(CONF_INTAKES, [])
+                for pack in sub.data.get(CONF_PACKS, [])
+                for key in pack.get(CONF_INTAKES, [])
             }
             if not new:
                 errors["base"] = "no_slots"
@@ -228,17 +235,40 @@ class PersonSubentryFlow(ConfigSubentryFlow):
 
 
 # --- Medikament -------------------------------------------------------------
+#
+# Schritt 1 („user“ bzw. „reconfigure“): Name und Wirkstärken.
+# Schritt 2 („pack“): je Wirkstärke eine Seite mit Vorrat, Einnahmen, Tag und Dosierung.
 
 
-def _medication_schema(hass: HomeAssistant, entry: ConfigEntry, selected: list[str] | None = None) -> vol.Schema:
+def _medication_schema(entry: ConfigEntry) -> vol.Schema:
+    strengths = sorted(
+        {
+            str(p.get(CONF_STRENGTH))
+            for sub in entry.subentries.values()
+            if sub.subentry_type == SUBENTRY_MEDICATION
+            for p in sub.data.get(CONF_PACKS, [])
+            if p.get(CONF_STRENGTH)
+        }
+    )
+    return vol.Schema(
+        {
+            vol.Required(CONF_NAME): str,
+            vol.Optional(CONF_STRENGTHS, default=[]): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=strengths, multiple=True, custom_value=True, mode=selector.SelectSelectorMode.DROPDOWN
+                )
+            ),
+        }
+    )
+
+
+def _pack_schema(hass: HomeAssistant, entry: ConfigEntry, selected: list[str] | None = None) -> vol.Schema:
     slots = _slots(entry, hass)
     persons = _persons(entry)
     # Ohne Personen: erste Einnahme-Zeit vorbelegen; mit Personen bewusst auswählen lassen.
     default = [] if persons else [make_key(ordered_slots(slots)[0][0], None)]
     return vol.Schema(
         {
-            vol.Required(CONF_NAME): str,
-            vol.Optional(CONF_STRENGTH): str,
             vol.Required(CONF_STOCK): _NUM(0, 1000),
             vol.Required(CONF_INTAKES, default=default): selector.SelectSelector(
                 selector.SelectSelectorConfig(
@@ -262,65 +292,109 @@ def _medication_schema(hass: HomeAssistant, entry: ConfigEntry, selected: list[s
     )
 
 
-def _suggested(data: dict[str, Any]) -> dict[str, Any]:
-    """Gespeicherte (flache) Daten als Vorbelegung fürs Formular, Abschnitt verschachtelt."""
-    values = {k: v for k, v in data.items() if k not in _ADVANCED_FIELDS}
-    values[SECTION_ADVANCED] = {k: data[k] for k in _ADVANCED_FIELDS if k in data}
+def _pack_suggested(pack: dict[str, Any]) -> dict[str, Any]:
+    """Gespeicherte (flache) Packung als Vorbelegung fürs Formular, Abschnitt verschachtelt."""
+    values = {k: v for k, v in pack.items() if k not in (*_ADVANCED_FIELDS, CONF_PACK_ID, CONF_STRENGTH)}
+    values[SECTION_ADVANCED] = {k: pack[k] for k in _ADVANCED_FIELDS if k in pack}
     return values
 
 
 class MedicationSubentryFlow(ConfigSubentryFlow):
-    """Medikament (Packung) anlegen oder ändern."""
+    """Medikament anlegen oder ändern; eine Packung (Gerät) je Wirkstärke."""
 
-    def _validate(self, user_input: dict[str, Any], own_id: str | None) -> tuple[dict[str, Any], dict[str, str]]:
-        data = {k: v for k, v in user_input.items() if k != SECTION_ADVANCED}
-        data.update(user_input.get(SECTION_ADVANCED, {}))
-        data[CONF_NAME] = data[CONF_NAME].strip()
-        if CONF_STRENGTH in data:
-            data[CONF_STRENGTH] = str(data[CONF_STRENGTH]).strip()
-            if not data[CONF_STRENGTH]:
-                del data[CONF_STRENGTH]
-        for key in _INT_FIELDS:
-            if key in data:
-                data[key] = int(data[key])  # NumberSelector liefert float
-        data[CONF_INTAKES] = list(dict.fromkeys(data.get(CONF_INTAKES, [])))
+    def __init__(self) -> None:
+        self._name = ""
+        self._strengths: list[str] = []
+        self._existing: dict[str, dict[str, Any]] = {}  # Wirkstärke (casefold) -> gespeicherte Packung
+        self._packs: list[dict[str, Any]] = []
+        self._reconfigure = False
 
+    def _own_id(self) -> str | None:
+        return self._get_reconfigure_subentry().subentry_id if self._reconfigure else None
+
+    async def _async_step_medication(self, step_id: str, user_input, suggested: dict[str, Any]):
         errors: dict[str, str] = {}
-        if not data[CONF_NAME]:
-            errors[CONF_NAME] = "no_name"
-        if not data[CONF_INTAKES]:
-            errors[CONF_INTAKES] = "no_intakes"
-        if _tag_in_use(self._get_entry(), data.get(CONF_TAG_ID), own_id):
-            errors[CONF_TAG_ID] = "tag_in_use"
-        return data, errors
-
-    def _title(self, data: dict[str, Any]) -> str:
-        """Titel in der Integrationsübersicht, mit Wirkstärke: „Magnesium 10 mg“."""
-        return f"{data[CONF_NAME]} {data[CONF_STRENGTH]}" if data.get(CONF_STRENGTH) else data[CONF_NAME]
-
-    async def async_step_user(self, user_input=None) -> SubentryFlowResult:
-        errors: dict[str, str] = {}
-        schema = _medication_schema(self.hass, self._get_entry())
         if user_input is not None:
-            data, errors = self._validate(user_input, None)
-            if not errors:
-                return self.async_create_entry(title=self._title(data), data=data)
-            schema = self.add_suggested_values_to_schema(schema, user_input)
-        return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
-
-    async def async_step_reconfigure(self, user_input=None) -> SubentryFlowResult:
-        sub = self._get_reconfigure_subentry()
-        errors: dict[str, str] = {}
-        suggested = _suggested(dict(sub.data))
-        if user_input is not None:
-            data, errors = self._validate(user_input, sub.subentry_id)
-            if not errors:
-                return self.async_update_and_abort(self._get_entry(), sub, title=self._title(data), data=data)
+            self._name = user_input[CONF_NAME].strip()
+            strengths = [str(x).strip() for x in user_input.get(CONF_STRENGTHS, [])]
+            self._strengths = list(dict.fromkeys(x for x in strengths if x)) or [""]
+            if not self._name:
+                errors[CONF_NAME] = "no_name"
+            elif len({x.casefold() for x in self._strengths}) != len(self._strengths):
+                errors[CONF_STRENGTHS] = "duplicate_strengths"
+            else:
+                self._packs = []
+                return await self.async_step_pack()
             suggested = user_input
         return self.async_show_form(
-            step_id="reconfigure",
-            data_schema=self.add_suggested_values_to_schema(
-                _medication_schema(self.hass, self._get_entry(), list(sub.data.get(CONF_INTAKES, []))), suggested
-            ),
+            step_id=step_id,
+            data_schema=self.add_suggested_values_to_schema(_medication_schema(self._get_entry()), suggested),
             errors=errors,
         )
+
+    async def async_step_user(self, user_input=None) -> SubentryFlowResult:
+        return await self._async_step_medication("user", user_input, {})
+
+    async def async_step_reconfigure(self, user_input=None) -> SubentryFlowResult:
+        self._reconfigure = True
+        sub = self._get_reconfigure_subentry()
+        packs = sub.data.get(CONF_PACKS, [])
+        self._existing = {str(p.get(CONF_STRENGTH, "")).casefold(): p for p in packs}
+        suggested = {
+            CONF_NAME: sub.data.get(CONF_NAME, sub.title),
+            CONF_STRENGTHS: [p[CONF_STRENGTH] for p in packs if p.get(CONF_STRENGTH)],
+        }
+        return await self._async_step_medication("reconfigure", user_input, suggested)
+
+    async def async_step_pack(self, user_input=None) -> SubentryFlowResult:
+        """Eine Packung (Wirkstärke) bearbeiten; danach die nächste oder fertig."""
+        strength = self._strengths[len(self._packs)]
+        existing = self._existing.get(strength.casefold())
+        entry = self._get_entry()
+        errors: dict[str, str] = {}
+        suggested = _pack_suggested(existing) if existing else {}
+
+        if user_input is not None:
+            pack: dict[str, Any] = {k: v for k, v in user_input.items() if k != SECTION_ADVANCED}
+            pack.update(user_input.get(SECTION_ADVANCED, {}))
+            for key in _INT_FIELDS:
+                if key in pack:
+                    pack[key] = int(pack[key])  # NumberSelector liefert float
+            pack[CONF_INTAKES] = list(dict.fromkeys(pack.get(CONF_INTAKES, [])))
+            tag = pack.get(CONF_TAG_ID)
+            if not pack[CONF_INTAKES]:
+                errors[CONF_INTAKES] = "no_intakes"
+            if tag and (
+                _tag_in_use(entry, tag, self._own_id()) or any(p.get(CONF_TAG_ID) == tag for p in self._packs)
+            ):
+                errors[CONF_TAG_ID] = "tag_in_use"
+            if not errors:
+                pack_id = existing[CONF_PACK_ID] if existing else uuid.uuid4().hex[:12]
+                self._packs.append({CONF_PACK_ID: pack_id, CONF_STRENGTH: strength, **pack})
+                if len(self._packs) < len(self._strengths):
+                    return await self.async_step_pack()
+                return self._async_finish()
+            suggested = user_input
+
+        selected = list(existing.get(CONF_INTAKES, [])) if existing else []
+        return self.async_show_form(
+            step_id="pack",
+            data_schema=self.add_suggested_values_to_schema(_pack_schema(self.hass, entry, selected), suggested),
+            errors=errors,
+            description_placeholders={
+                "medication": f"{self._name} {strength}".strip(),
+                "position": str(len(self._packs) + 1),
+                "count": str(len(self._strengths)),
+            },
+            last_step=len(self._packs) + 1 == len(self._strengths),
+        )
+
+    @callback
+    def _async_finish(self) -> SubentryFlowResult:
+        packs = [{k: v for k, v in p.items() if not (k == CONF_STRENGTH and not v)} for p in self._packs]
+        data = {CONF_NAME: self._name, CONF_PACKS: packs}
+        if self._reconfigure:
+            return self.async_update_and_abort(
+                self._get_entry(), self._get_reconfigure_subentry(), title=self._name, data=data
+            )
+        return self.async_create_entry(title=self._name, data=data)

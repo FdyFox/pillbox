@@ -35,7 +35,7 @@ class _BaseEntity(Entity):
 
 
 class PillboxEntity(_BaseEntity):
-    """Entität eines Medikaments (Packung)."""
+    """Entität einer Packung; `sub_id` ist hier die Packungs-id (ein Gerät je Packung)."""
 
     def __init__(self, manager: PillboxManager, sub_id: str, key: str) -> None:
         super().__init__(manager, sub_id, key)
@@ -76,10 +76,10 @@ def add_per_medication(
     async_add_entities: AddConfigEntryEntitiesCallback,
     factory: Callable[[PillboxManager, str], Iterable[Entity]],
 ) -> None:
-    """Entitäten je Medikament anlegen und der jeweiligen Untereinheit zuordnen."""
+    """Entitäten je Packung anlegen und der Untereinheit ihres Medikaments zuordnen."""
     manager = entry.runtime_data
-    for sub_id in manager.meds:
-        async_add_entities(factory(manager, sub_id), config_subentry_id=sub_id)
+    for pack_id in manager.meds:
+        async_add_entities(factory(manager, pack_id), config_subentry_id=manager.info[pack_id].sub_id)
 
 
 def add_per_person(

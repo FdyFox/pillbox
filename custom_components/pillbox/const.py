@@ -9,7 +9,7 @@ PLATFORMS = [Platform.NUMBER, Platform.SWITCH, Platform.SENSOR, Platform.BINARY_
 STORAGE_KEY = f"{DOMAIN}.state"
 STORAGE_VERSION = 1
 
-SUBENTRY_MEDICATION = "medication"  # eine Packung (Medikament + Wirkstärke) mit Vorrat
+SUBENTRY_MEDICATION = "medication"  # ein Medikament mit einer Packung je Wirkstärke
 SUBENTRY_PERSON = "person"  # wer etwas einnimmt, mit eigenem NFC-Tag
 
 # Medikament
@@ -20,6 +20,9 @@ CONF_TABLETS_PER_INTAKE = "tablets_per_intake"
 CONF_INTAKES = "intakes"  # Liste von Einnahme-Schlüsseln "<zeit-id>|<person-id>" (Person leer = ohne Person)
 CONF_LOW_THRESHOLD = "low_threshold"
 SECTION_ADVANCED = "advanced"
+CONF_PACKS = "packs"  # Liste der Packungen (je Wirkstärke) eines Medikaments
+CONF_PACK_ID = "id"  # stabile id einer Packung (Store, unique_id, Gerät)
+CONF_STRENGTHS = "strengths"  # nur im Formular: Liste der Wirkstärken
 # Person
 CONF_HA_PERSON = "ha_person"  # optional: person.* aus HA
 # Pillbox-Optionen: Einnahme-Zeiten des Tages, id ("1".."6") -> Name; Reihenfolge = id

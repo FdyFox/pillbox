@@ -212,8 +212,10 @@ async def test_migrates_named_intakes_to_slots(hass, freezer):
     freezer.move_to(_at("2026-11-18 09:00:00"))
     await _setup(hass, entry)
     assert entry.options["slots"] == {**SLOTS, "5": "Zum Frühstück"}
-    assert entry.subentries[SUB_ID].data["intakes"] == ["1|", "5|"]
-    assert "reminder_weekday" not in entry.subentries[SUB_ID].data
+    pack = entry.subentries[SUB_ID].data["packs"][0]
+    assert pack["id"] == SUB_ID  # Vorrat und Entitäten bleiben erhalten
+    assert pack["intakes"] == ["1|", "5|"]
+    assert "reminder_weekday" not in pack
     assert _state(hass, "switch.vitamin_d_morgens") == "off"
     assert _state(hass, "switch.vitamin_d_zum_fruhstuck") == "off"
 
@@ -234,7 +236,9 @@ async def test_removed_intake_removes_switch(hass, freezer):
     await _setup(hass, entry)
     registry = er.async_get(hass)
     assert registry.async_get("switch.vitamin_d_abends") is not None
-    hass.config_entries.async_update_subentry(entry, entry.subentries[SUB_ID], data=MED_DATA)
+    sub = entry.subentries[SUB_ID]
+    pack = {**sub.data["packs"][0], "intakes": ["1|"]}
+    hass.config_entries.async_update_subentry(entry, sub, data={**sub.data, "packs": [pack]})
     await hass.async_block_till_done()
     assert registry.async_get("switch.vitamin_d_abends") is None
     assert registry.async_get("switch.vitamin_d_morgens") is not None
@@ -260,6 +264,9 @@ async def test_shared_pack_and_person_tags(hass, freezer):
     entry = _family_entry(hass)
     freezer.move_to(_at("2026-11-18 07:30:00"))
     await _setup(hass, entry)
+    # Beide Magnesium-Einträge wurden zu einem Medikament mit zwei Packungen zusammengeführt.
+    meds = [s for s in entry.subentries.values() if s.subentry_type == "medication"]
+    assert [(m.title, [p["strength"] for p in m.data["packs"]]) for m in meds] == [("Magnesium", ["10 mg", "20 mg"])]
     assert _state(hass, "switch.magnesium_10_mg_anna_morgens") == "off"
     assert _state(hass, "switch.magnesium_10_mg_ben_morgens") == "off"
     assert _state(hass, "switch.magnesium_10_mg_anna_mittags") == "off"
@@ -324,27 +331,37 @@ async def test_config_person_and_medication_flow(hass):
     anna_id = next(s for s, sub in entry.subentries.items() if sub.title == "Anna")
 
     result = await hass.config_entries.subentries.async_init((entry.entry_id, "medication"), context={"source": "user"})
+    assert result["step_id"] == "user"
+    bad = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {"name": "Magnesium", "strengths": ["10 mg", "10 MG"]}
+    )
+    assert bad["errors"] == {"strengths": "duplicate_strengths"}
+    result = await hass.config_entries.subentries.async_configure(
+        bad["flow_id"], {"name": " Magnesium ", "strengths": ["10 mg", " 20 mg "]}
+    )
+    assert result["step_id"] == "pack"
+    assert result["description_placeholders"]["medication"] == "Magnesium 10 mg"
     options = next(v for k, v in result["data_schema"].schema.items() if k == "intakes").config["options"]
     assert {"value": f"1|{anna_id}", "label": "Morning · Anna"} in options
     # Mit Personen gibt es keine Einnahmen „ohne Person“ mehr zur Auswahl.
     assert all(not o["value"].endswith("|") for o in options)
 
-    user_input = {
-        "name": " Magnesium ",
-        "strength": " 10 mg ",
-        "stock": 12.0,
-        "intakes": [f"1|{anna_id}", f"2|{anna_id}"],
-        "advanced": {"tablets_per_intake": 1.0, "low_threshold": 5.0},
-    }
-    bad = await hass.config_entries.subentries.async_configure(result["flow_id"], {**user_input, "tag_id": "tag-anna"})
+    pack10 = {"stock": 12.0, "intakes": [f"1|{anna_id}", f"2|{anna_id}"], "advanced": {"tablets_per_intake": 1.0, "low_threshold": 5.0}}
+    bad = await hass.config_entries.subentries.async_configure(result["flow_id"], {**pack10, "tag_id": "tag-anna"})
     assert bad["errors"] == {"tag_id": "tag_in_use"}
-    result = await hass.config_entries.subentries.async_configure(bad["flow_id"], user_input)
+    result = await hass.config_entries.subentries.async_configure(bad["flow_id"], pack10)
+    assert result["step_id"] == "pack"
+    assert result["description_placeholders"]["medication"] == "Magnesium 20 mg"
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {"stock": 5, "intakes": [f"3|{anna_id}"], "advanced": {"tablets_per_intake": 1, "low_threshold": 2}}
+    )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
     sub = next(s for s in entry.subentries.values() if s.subentry_type == "medication")
-    assert sub.title == "Magnesium 10 mg"
-    assert dict(sub.data) == {
-        "name": "Magnesium",
+    assert sub.title == "Magnesium"
+    packs = sub.data["packs"]
+    assert [p["strength"] for p in packs] == ["10 mg", "20 mg"]
+    assert {k: v for k, v in packs[0].items() if k != "id"} == {
         "strength": "10 mg",
         "stock": 12,
         "intakes": [f"1|{anna_id}", f"2|{anna_id}"],
@@ -353,6 +370,43 @@ async def test_config_person_and_medication_flow(hass):
     }
     assert _state(hass, "switch.magnesium_10_mg_anna_noon") == "off"
     assert _state(hass, "sensor.magnesium_10_mg_days_left") == "6"
+    assert _state(hass, "number.magnesium_20_mg_stock") == "5"
+
+
+async def test_reconfigure_keeps_and_removes_packs(hass, freezer):
+    entry = _family_entry(hass)
+    freezer.move_to(_at("2026-11-18 07:30:00"))
+    await _setup(hass, entry)
+    await _scan(hass, "tag-anna")
+    assert _state(hass, "number.magnesium_10_mg_stock") == "29"
+    sub_id = next(s for s, sub in entry.subentries.items() if sub.subentry_type == "medication")
+
+    result = await entry.start_subentry_reconfigure_flow(hass, sub_id)
+    schema = result["data_schema"].schema
+    suggested = {str(k): (k.description or {}).get("suggested_value") for k in schema}
+    assert suggested == {"name": "Magnesium", "strengths": ["10 mg", "20 mg"]}
+    # 20 mg entfernen, 30 mg neu.
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {"name": "Magnesium", "strengths": ["10 mg", "30 mg"]}
+    )
+    pack_schema = result["data_schema"].schema
+    pre = {str(k): (k.description or {}).get("suggested_value") for k in pack_schema}
+    assert pre["stock"] == 30 and pre["intakes"] == ["1|anna", "1|ben", "2|anna"]
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {"stock": 30, "intakes": ["1|anna", "1|ben", "2|anna"], "advanced": {}}
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {"stock": 7, "intakes": ["1|ben"], "advanced": {}}
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    await hass.async_block_till_done()
+    # 10 mg: gleiche Packung, Vorrat und Status bleiben; 20 mg weg; 30 mg neu.
+    assert _state(hass, "number.magnesium_10_mg_stock") == "29"
+    assert _state(hass, "switch.magnesium_10_mg_anna_morgens") == "on"
+    assert hass.states.get("number.magnesium_20_mg_stock") is None
+    assert er.async_get(hass).async_get("number.magnesium_20_mg_stock") is None
+    assert _state(hass, "number.magnesium_30_mg_stock") == "7"
 
 
 async def test_options_rename_and_protect_slots(hass, entry):
@@ -375,6 +429,8 @@ async def test_options_rename_and_protect_slots(hass, entry):
 async def test_reconfigure_prefills_section(hass, entry):
     await _setup(hass, entry)
     result = await entry.start_subentry_reconfigure_flow(hass, SUB_ID)
+    result = await hass.config_entries.subentries.async_configure(result["flow_id"], {"name": "Vitamin D", "strengths": []})
+    assert result["step_id"] == "pack"
     advanced = next(v for k, v in result["data_schema"].schema.items() if str(k) == "advanced")
     sub_suggested = {str(k): (k.description or {}).get("suggested_value") for k in advanced.schema.schema}
     assert sub_suggested == {"tablets_per_intake": 1, "low_threshold": 20}
@@ -391,7 +447,7 @@ async def test_tag_dropdown_lists_known_tags(hass):
     entry = MockConfigEntry(domain=DOMAIN, title="Pillbox", unique_id=DOMAIN)
     entry.add_to_hass(hass)
     result = await hass.config_entries.subentries.async_init(
-        (entry.entry_id, "medication"), context={"source": "user"}
+        (entry.entry_id, "person"), context={"source": "user"}
     )
     tag_sel = next(v for k, v in result["data_schema"].schema.items() if k == "tag_id")
     cfg = tag_sel.config
@@ -402,8 +458,15 @@ async def test_tag_dropdown_lists_known_tags(hass):
     assert cfg["custom_value"] is True
 
 
-async def test_existing_title_gets_strength(hass, freezer):
-    entry = _make_entry(hass, {**MED_DATA, "strength": "10mg"})
+async def test_merge_keeps_stored_stock(hass, hass_storage, freezer):
+    """Zusammengeführte Packungen behalten Vorrat und Status aus dem Speicher."""
+    entry = _family_entry(hass)
+    _store(hass_storage, entry, {"day": "2026-11-18", "meds": {
+        "m10": {"stock": 21, "taken": {"1|anna": True}, "config_stock": 30},
+        "m20": {"stock": 4, "taken": {"1|ben": True}, "config_stock": 10},
+    }})
+    freezer.move_to(_at("2026-11-18 09:00:00"))
     await _setup(hass, entry)
-    assert entry.subentries[SUB_ID].title == "Vitamin D 10mg"
-    assert _state(hass, "number.vitamin_d_10mg_stock") == "53"
+    assert _state(hass, "number.magnesium_10_mg_stock") == "21"
+    assert _state(hass, "number.magnesium_20_mg_stock") == "4"
+    assert _state(hass, "switch.magnesium_20_mg_ben_morgens") == "on"

@@ -29,7 +29,7 @@ Wer feste Einnahmezeiten braucht (z. B. exakt alle 12 Stunden), mit Verschieben,
 
 - Ein Config-Entry „Pillbox“ (Single Instance). Seine **Optionen** legen die Einnahme-Zeiten des Tages fest: bis zu 6, Standard „Morgens, Mittags, Abends, Nachts“. Umbenennen geht jederzeit; eine Zeit, die noch ein Medikament nutzt, lässt sich nicht löschen.
 - Pro **Person** eine Untereinheit (Typ `person`) und ein Gerät. Optional.
-- Pro **Medikament** (= Packung) eine Untereinheit (Typ `medication`) und ein Gerät.
+- Pro **Medikament** eine Untereinheit (Typ `medication`), darunter **je Wirkstärke eine Packung** mit eigenem Gerät und Vorrat. In der Integrationsübersicht steht so „Magnesium“ einmal, darunter „Magnesium 10 mg“, „Magnesium 20 mg“ usw.
 
 ### Einstellungen pro Person
 
@@ -41,12 +41,19 @@ Wer feste Einnahmezeiten braucht (z. B. exakt alle 12 Stunden), mit Verschieben,
 
 ### Einstellungen pro Medikament
 
+„Medikament hinzufügen“ fragt zuerst Name und Wirkstärken ab, danach folgt je Wirkstärke eine Seite für die Packung. „Bearbeiten“ läuft genauso; eine neue Wirkstärke fügt eine Packung hinzu, eine entfernte löscht sie.
+
 | Feld | Bedeutung | Standard |
 | --- | --- | --- |
 | `name` | Anzeigename, z. B. „Magnesium“ | – |
-| `strength` | Wirkstärke, z. B. „10 mg“. Jede Wirkstärke ist eine eigene Packung | – |
+| `strengths` | Wirkstärken, z. B. „10 mg“, „20 mg“. Leer = eine Packung ohne Wirkstärke | – |
+
+### Einstellungen pro Packung
+
+| Feld | Bedeutung | Standard |
+| --- | --- | --- |
 | `stock` | Startvorrat in Stück | – |
-| `intakes` | Wer nimmt wann: Einnahme-Zeit, optional mit Person, z. B. „Morgens · Anna“, „Morgens · Ben“ | erste Einnahme-Zeit |
+| `intakes` | Wer nimmt wann: Einnahme-Zeit mit Person, z. B. „Morgens · Anna“, „Morgens · Ben“. Ohne angelegte Personen nur die Zeit | erste Einnahme-Zeit |
 | `tag_id` | NFC-Tag an der Packung; ein Scan erfasst die nächste offene Einnahme. Dropdown mit allen HA-Tags | – |
 | `tablets_per_intake` | Tabletten pro Einnahme (eingeklappter Abschnitt „Dosierung und Warnung“) | 1 |
 | `low_threshold` | Warnschwelle für niedrigen Vorrat (ebenda) | 20 |
@@ -56,12 +63,13 @@ Ein NFC-Tag gehört genau einer Person oder einem Medikament; doppelte Zuordnung
 ### Beispiel: Geschwister mit gemeinsamer Packung
 
 - Personen „Anna“ (Tag am Becher von Anna) und „Ben“.
-- „Magnesium 10 mg“: Morgens · Anna, Morgens · Ben, Mittags · Anna.
-- „Magnesium 20 mg“: Morgens · Ben.
+- Medikament „Magnesium“ mit den Wirkstärken 10 mg und 20 mg:
+  - Packung 10 mg: Morgens · Anna, Morgens · Ben, Mittags · Anna.
+  - Packung 20 mg: Morgens · Ben.
 
 Anna scannt morgens → nur „Morgens · Anna“ an 10 mg; mittags scannt sie erneut → „Mittags · Anna“. Ben scannt morgens → 10 mg und 20 mg auf einmal. Beide zählen vom selben 10-mg-Vorrat herunter.
 
-## Entitätsmodell (pro Medikament)
+## Entitätsmodell (pro Packung)
 
 | Plattform | Entität | Zweck |
 | --- | --- | --- |

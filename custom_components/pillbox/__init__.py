@@ -17,7 +17,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME
 from homeassistant.core import Event, HomeAssistant, callback
-from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.storage import Store
@@ -27,6 +27,8 @@ from .const import (
     CONF_HA_PERSON,
     CONF_INTAKES,
     CONF_LOW_THRESHOLD,
+    CONF_PACK_ID,
+    CONF_PACKS,
     CONF_SLOTS,
     CONF_STOCK,
     CONF_STRENGTH,
@@ -34,6 +36,7 @@ from .const import (
     CONF_TAG_ID,
     DAY_RESET_HOUR,
     DEFAULT_LOW_THRESHOLD,
+    DOMAIN,
     EVENT_LOW_STOCK,
     EVENT_TAG_SCANNED,
     LEGACY_FIELDS,
@@ -75,9 +78,10 @@ class Person:
 
 @dataclass
 class MedInfo:
-    """Anzeige-Infos eines Medikaments (Packung)."""
+    """Anzeige-Infos einer Packung (Medikament + Wirkstärke)."""
 
     name: str
+    sub_id: str  # Untereinheit des Medikaments, zu der die Packung gehört
     strength: str | None = None
     tag_id: str | None = None
     config: dict[str, Any] = field(default_factory=dict)
@@ -96,9 +100,10 @@ class PillboxManager:
         self.store: Store = Store(hass, STORAGE_VERSION, f"{STORAGE_KEY}.{entry.entry_id}")
         self.slots: dict[str, str] = dict(entry.options.get(CONF_SLOTS) or default_slots(hass.config.language))
         self.persons: dict[str, Person] = {}  # key = subentry_id
-        self.meds: dict[str, Medication] = {}  # key = subentry_id
-        self.info: dict[str, MedInfo] = {}  # key = subentry_id
-        self.tags: dict[str, tuple[str, str]] = {}  # tag_id -> ("medication"|"person", subentry_id)
+        # Packungen: key = Packungs-id (bei übernommenen Einträgen = alte subentry_id)
+        self.meds: dict[str, Medication] = {}
+        self.info: dict[str, MedInfo] = {}
+        self.tags: dict[str, tuple[str, str]] = {}  # tag_id -> ("medication"|"person", Packungs-/Personen-id)
         self._config_stock: dict[str, int] = {}  # zuletzt übernommener Startvorrat aus der Konfiguration
         self.day: date = logical_today()
 
@@ -125,48 +130,50 @@ class PillboxManager:
         for sub_id, sub in self.entry.subentries.items():
             if sub.subentry_type != SUBENTRY_MEDICATION:
                 continue
-            d = sub.data
-            state = saved_meds.get(sub_id, {})
-            config_stock = int(d.get(CONF_STOCK, 0))
-            # Vorrat in der Konfiguration geändert (Neu konfigurieren) -> übernehmen, sonst gespeicherten Stand.
-            if "stock" in state and state.get("config_stock") == config_stock:
-                stock = int(state["stock"])
-            else:
-                stock = config_stock
-
-            # Einnahmen zu gelöschten Zeiten oder Personen fallen weg.
-            data_keys = [
-                k
-                for k in d.get(CONF_INTAKES, [])
-                if parse_key(k)[0] in self.slots and (parse_key(k)[1] is None or parse_key(k)[1] in self.persons)
-            ] or [
-                make_key(next(iter(sorted(self.slots, key=int))), None)
-            ]
-            saved_taken = state.get("taken", [True] * int(state.get("taken_today", 0)))
-            if isinstance(saved_taken, list):  # älterer Speicherstand: nach Position
-                saved_taken = dict(zip(data_keys, saved_taken))
-            keys = sorted(data_keys, key=self._slot_order)
-
-            self.meds[sub_id] = Medication(
-                name=d.get(CONF_NAME) or sub.title,
-                stock=stock,
-                intakes=keys,
-                tablets_per_intake=int(d.get(CONF_TABLETS_PER_INTAKE, 1)),
-                low_threshold=int(d.get(CONF_LOW_THRESHOLD, DEFAULT_LOW_THRESHOLD)),
-                taken=[bool(saved_taken.get(k, False)) for k in keys],
-            )
-            self.info[sub_id] = MedInfo(
-                name=d.get(CONF_NAME) or sub.title, strength=d.get(CONF_STRENGTH) or None, tag_id=d.get(CONF_TAG_ID), config=dict(d)
-            )
-            self._config_stock[sub_id] = config_stock
-            if tag := d.get(CONF_TAG_ID):
-                self.tags.setdefault(tag, (SUBENTRY_MEDICATION, sub_id))
+            name = sub.data.get(CONF_NAME) or sub.title
+            for pack in sub.data.get(CONF_PACKS, []):
+                self._load_pack(sub_id, name, pack, saved_meds.get(pack[CONF_PACK_ID], {}))
 
         # Tageswechsel verpasst (z. B. HA war um 04:00 aus) -> jetzt nachholen.
         if saved_day != self.day.isoformat():
             for med in self.meds.values():
                 med.reset_day()
         await self.async_save()
+
+    def _load_pack(self, sub_id: str, name: str, d: dict[str, Any], state: dict[str, Any]) -> None:
+        pack_id = d[CONF_PACK_ID]
+        config_stock = int(d.get(CONF_STOCK, 0))
+        # Vorrat in der Konfiguration geändert (Bearbeiten) -> übernehmen, sonst gespeicherten Stand.
+        if "stock" in state and state.get("config_stock") == config_stock:
+            stock = int(state["stock"])
+        else:
+            stock = config_stock
+
+        # Einnahmen zu gelöschten Zeiten oder Personen fallen weg.
+        data_keys = [
+            k
+            for k in d.get(CONF_INTAKES, [])
+            if parse_key(k)[0] in self.slots and (parse_key(k)[1] is None or parse_key(k)[1] in self.persons)
+        ] or [make_key(next(iter(sorted(self.slots, key=int))), None)]
+        saved_taken = state.get("taken", [True] * int(state.get("taken_today", 0)))
+        if isinstance(saved_taken, list):  # älterer Speicherstand: nach Position
+            saved_taken = dict(zip(data_keys, saved_taken))
+        keys = sorted(data_keys, key=self._slot_order)
+
+        self.meds[pack_id] = Medication(
+            name=name,
+            stock=stock,
+            intakes=keys,
+            tablets_per_intake=int(d.get(CONF_TABLETS_PER_INTAKE, 1)),
+            low_threshold=int(d.get(CONF_LOW_THRESHOLD, DEFAULT_LOW_THRESHOLD)),
+            taken=[bool(saved_taken.get(k, False)) for k in keys],
+        )
+        self.info[pack_id] = MedInfo(
+            name=name, sub_id=sub_id, strength=d.get(CONF_STRENGTH) or None, tag_id=d.get(CONF_TAG_ID), config=dict(d)
+        )
+        self._config_stock[pack_id] = config_stock
+        if tag := d.get(CONF_TAG_ID):
+            self.tags.setdefault(tag, (SUBENTRY_MEDICATION, pack_id))
 
     async def async_save(self) -> None:
         await self.store.async_save(
@@ -328,30 +335,40 @@ async def async_setup_entry(hass: HomeAssistant, entry: PillboxConfigEntry) -> b
 
 @callback
 def _async_migrate(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Ältere Einträge übernehmen: freie Einnahme-Namen je Medikament -> gemeinsame Einnahme-Zeiten."""
+    """Ältere Einträge übernehmen: Einnahme-Zeiten, Packungen je Wirkstärke, gleichnamige zusammenführen."""
     language = hass.config.language
     slots: dict[str, str] = dict(entry.options.get(CONF_SLOTS) or {})
     slots_changed = not slots
     if not slots:
         slots = default_slots(language)
 
+    # 1. Einzelne Packung (alte, flache Daten) -> Medikament mit Liste von Packungen.
     for sub in list(entry.subentries.values()):
-        if sub.subentry_type != SUBENTRY_MEDICATION:
+        if sub.subentry_type != SUBENTRY_MEDICATION or CONF_PACKS in sub.data:
             continue
-        data = dict(sub.data)
-        # Titel mit Wirkstärke, damit gleichnamige Packungen unterscheidbar sind.
-        if (strength := data.get(CONF_STRENGTH)) and sub.title == data.get(CONF_NAME):
-            hass.config_entries.async_update_subentry(entry, sub, title=f"{sub.title} {strength}")
-            sub = entry.subentries[sub.subentry_id]
+        data = {k: v for k, v in sub.data.items() if k not in LEGACY_FIELDS}
         intakes = data.get(CONF_INTAKES)
-        new_format = bool(intakes) and all("|" in str(i) for i in intakes)
-        if new_format and not any(f in data for f in LEGACY_FIELDS):
-            continue
-        new = {k: v for k, v in data.items() if k not in LEGACY_FIELDS}
-        if not new_format:
-            new[CONF_INTAKES] = _legacy_keys(data, slots, language, sub.title)
+        if not (intakes and all("|" in str(i) for i in intakes)):
+            data[CONF_INTAKES] = _legacy_keys(sub.data, slots, language, sub.title)
             slots_changed = True  # evtl. neue Einnahme-Zeiten ergänzt
-        hass.config_entries.async_update_subentry(entry, sub, data=new)
+        name = data.pop(CONF_NAME, None) or sub.title
+        pack = {CONF_PACK_ID: sub.subentry_id, **data}  # alte subentry_id -> Vorrat und Entitäten bleiben
+        hass.config_entries.async_update_subentry(entry, sub, title=name, data={CONF_NAME: name, CONF_PACKS: [pack]})
+
+    # 2. Gleichnamige Medikamente (früher je Wirkstärke ein Eintrag) zusammenführen.
+    by_name: dict[str, list] = {}
+    for sub in entry.subentries.values():
+        if sub.subentry_type == SUBENTRY_MEDICATION:
+            by_name.setdefault(sub.data[CONF_NAME].casefold(), []).append(sub)
+    for subs in by_name.values():
+        if len(subs) < 2:
+            continue
+        keep, *others = subs
+        packs = [p for s in subs for p in s.data[CONF_PACKS]]
+        packs.sort(key=lambda p: str(p.get(CONF_STRENGTH, "")))
+        hass.config_entries.async_update_subentry(entry, keep, data={**keep.data, CONF_PACKS: packs})
+        for other in others:
+            hass.config_entries.async_remove_subentry(entry, other.subentry_id)
 
     if slots_changed:
         hass.config_entries.async_update_entry(entry, options={**entry.options, CONF_SLOTS: slots})
@@ -380,6 +397,12 @@ def _async_remove_stale_entities(hass: HomeAssistant, entry: ConfigEntry, manage
     for reg_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
         if reg_entry.unique_id not in expected:
             registry.async_remove(reg_entry.entity_id)
+    # Geräte entfernter Packungen
+    devices = dr.async_get(hass)
+    known = {*manager.meds, *manager.persons}
+    for device in dr.async_entries_for_config_entry(devices, entry.entry_id):
+        if not any(domain == DOMAIN and ident in known for domain, ident in device.identifiers):
+            devices.async_remove_device(device.id)
 
 
 async def _async_reload(hass: HomeAssistant, entry: ConfigEntry) -> None:
