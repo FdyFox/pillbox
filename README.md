@@ -209,3 +209,7 @@ Layout: `custom_components/pillbox/` (`logic.py` pure logic, `__init__.py` manag
 GitHub Actions run the tests, Home Assistant's `hassfest` and the HACS validation on every push.
 
 Notes for contributors (including AI agents) are in [AGENTS.md](AGENTS.md).
+
+## License
+
+Pillbox is licensed under the [GNU General Public License v3.0](LICENSE).
