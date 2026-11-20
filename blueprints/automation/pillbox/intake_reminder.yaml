@@ -1,0 +1,161 @@
+blueprint:
+  name: Pillbox – Erinnerung an eine Einnahme
+  description: >-
+    Erinnert ab einer Uhrzeit an eine Pillbox-Einnahme (z. B. „Vitamin D Morgens“), solange
+    deren Schalter aus ist, und wiederholt die Erinnerung bis zu einer Endzeit.
+    Bei Handy-Benachrichtigungen (mobile_app) gibt es einen Knopf „Genommen“, der die
+    Einnahme direkt abhakt. Pro Einnahme eine Automation anlegen.
+  domain: automation
+  source_url: https://github.com/FdyFox/pillbox/blob/main/blueprints/automation/pillbox/intake_reminder.yaml
+  input:
+    intake_switch:
+      name: Einnahme
+      description: Schalter der Einnahme, z. B. switch.vitamin_d_morgens
+      selector:
+        entity:
+          filter:
+            - integration: pillbox
+              domain: switch
+    time_weekday:
+      name: Erinnerung ab (Mo–Fr)
+      default: "08:00:00"
+      selector:
+        time: {}
+    time_weekend:
+      name: Erinnerung ab (Sa–So)
+      default: "10:00:00"
+      selector:
+        time: {}
+    notify_action:
+      name: Benachrichtigungs-Action
+      description: z. B. notify.mobile_app_handy
+      selector:
+        text: {}
+    repeat_minutes:
+      name: Wiederholen alle … Minuten
+      description: 0 = nur einmal erinnern
+      default: 60
+      selector:
+        number:
+          min: 0
+          max: 240
+          step: 5
+          unit_of_measurement: min
+          mode: box
+    last_reminder:
+      name: Letzte Erinnerung um
+      default: "22:00:00"
+      selector:
+        time: {}
+    title:
+      name: Titel
+      default: "{{ medication }}"
+      selector:
+        text: {}
+    message:
+      name: Nachricht
+      default: "{{ intake }}: noch nicht genommen."
+      selector:
+        text: {}
+
+mode: parallel
+max: 5
+
+trigger_variables:
+  switch_entity: !input intake_switch
+
+triggers:
+  - trigger: time
+    at: !input time_weekday
+    id: weekday
+  - trigger: time
+    at: !input time_weekend
+    id: weekend
+  - trigger: event
+    event_type: mobile_app_notification_action
+    event_data:
+      action: "PILLBOX_{{ switch_entity }}"
+    id: take
+
+variables:
+  notify_action: !input notify_action
+  repeat_minutes: !input repeat_minutes
+  last_reminder: !input last_reminder
+  medication: "{{ device_attr(device_id(switch_entity), 'name') or state_attr(switch_entity, 'friendly_name') }}"
+  intake: "{{ state_attr(switch_entity, 'intake') }}"
+  action_id: "PILLBOX_{{ switch_entity }}"
+  is_mobile_app: "{{ notify_action.startswith('notify.mobile_app_') }}"
+
+conditions:
+  - condition: or
+    conditions:
+      - condition: trigger
+        id: take
+      - condition: and
+        conditions:
+          - condition: trigger
+            id: weekday
+          - condition: time
+            weekday: [mon, tue, wed, thu, fri]
+          - condition: state
+            entity_id: !input intake_switch
+            state: "off"
+      - condition: and
+        conditions:
+          - condition: trigger
+            id: weekend
+          - condition: time
+            weekday: [sat, sun]
+          - condition: state
+            entity_id: !input intake_switch
+            state: "off"
+
+actions:
+  - if:
+      - condition: trigger
+        id: take
+    then:
+      - action: switch.turn_on
+        target:
+          entity_id: !input intake_switch
+    else:
+      - repeat:
+          while:
+            - condition: state
+              entity_id: !input intake_switch
+              state: "off"
+            - condition: template
+              value_template: "{{ repeat.index == 1 or repeat_minutes | int(0) > 0 }}"
+            - condition: template
+              value_template: "{{ now().strftime('%H:%M:%S') < last_reminder }}"
+          sequence:
+            - action: !input notify_action
+              data:
+                title: !input title
+                message: !input message
+                data: >-
+                  {{ {'tag': action_id, 'actions': [{'action': action_id, 'title': 'Genommen'}]}
+                     if is_mobile_app else {} }}
+            - if:
+                - condition: template
+                  value_template: "{{ repeat_minutes | int(0) > 0 }}"
+              then:
+                - wait_for_trigger:
+                    - trigger: state
+                      entity_id: !input intake_switch
+                      to: "on"
+                  timeout:
+                    minutes: "{{ repeat_minutes | int }}"
+      # Erledigt -> Erinnerung vom Handy entfernen.
+      - if:
+          - condition: state
+            entity_id: !input intake_switch
+            state: "on"
+          - condition: template
+            value_template: "{{ is_mobile_app }}"
+        then:
+          - action: !input notify_action
+            data:
+              message: clear_notification
+              data:
+                tag: "{{ action_id }}"
