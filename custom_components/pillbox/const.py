@@ -10,7 +10,7 @@ STORAGE_KEY = f"{DOMAIN}.state"
 STORAGE_VERSION = 1
 
 SUBENTRY_MEDICATION = "medication"  # ein Medikament mit einer Packung je Wirkstärke
-SUBENTRY_PERSON = "person"  # wer etwas einnimmt, mit eigenem NFC-Tag
+SUBENTRY_PERSON = "person"  # alle Personen (je Person ein Gerät, eigener NFC-Tag)
 
 # Medikament
 CONF_TAG_ID = "tag_id"
@@ -23,8 +23,10 @@ SECTION_ADVANCED = "advanced"
 CONF_PACKS = "packs"  # Liste der Packungen (je Wirkstärke) eines Medikaments
 CONF_PACK_ID = "id"  # stabile id einer Packung (Store, unique_id, Gerät)
 CONF_STRENGTHS = "strengths"  # nur im Formular: Liste der Wirkstärken
-# Person
+# Personen: eine Untereinheit „Personen“ mit Liste; jede Person ist ein Gerät
+CONF_PERSONS = "persons"
 CONF_HA_PERSON = "ha_person"  # optional: person.* aus HA
+PERSONS_TITLE = {"de": "Personen", "en": "People"}
 # Pillbox-Optionen: Einnahme-Zeiten des Tages, id ("1".."6") -> Name; Reihenfolge = id
 CONF_SLOTS = "slots"
 MAX_SLOTS = 6
@@ -85,3 +87,7 @@ def legacy_intake_names(data: dict, language: str | None) -> list[str]:
     if count == 2:
         return [defaults[0], defaults[2]]
     return defaults[:count] if count <= len(defaults) else [str(i + 1) for i in range(count)]
+
+
+def persons_title(language: str | None) -> str:
+    return PERSONS_TITLE.get((language or "en").split("-")[0], PERSONS_TITLE["en"])

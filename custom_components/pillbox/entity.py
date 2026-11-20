@@ -96,5 +96,5 @@ def add_per_person(
 ) -> None:
     """Entitäten je Person anlegen und der jeweiligen Untereinheit zuordnen."""
     manager = entry.runtime_data
-    for sub_id in manager.persons:
-        async_add_entities(factory(manager, sub_id), config_subentry_id=sub_id)
+    for person_id, person in manager.persons.items():
+        async_add_entities(factory(manager, person_id), config_subentry_id=person.sub_id)

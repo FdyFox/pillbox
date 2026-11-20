@@ -98,25 +98,32 @@
       }
     },
     "person": {
-      "entry_type": "Person",
+      "entry_type": "Personen",
       "initiate_flow": {
-        "user": "Person hinzufügen"
+        "user": "Personen hinzufügen"
       },
       "step": {
         "user": {
-          "title": "Person hinzufügen",
+          "title": "Personen hinzufügen",
           "data": {
-            "name": "Name",
-            "ha_person": "Person in Home Assistant",
-            "tag_id": "NFC-Tag"
+            "persons": "Personen"
           },
           "data_description": {
-            "ha_person": "Optional, Verknüpfung mit einer Person in Home Assistant.",
-            "tag_id": "Tag dieser Person: Ein Scan hakt alle ihre offenen Einnahmen zur nächsten Einnahme-Zeit ab, über alle Medikamente."
+            "persons": "Ein Eintrag je Person, z. B. „Anna“, „Ben“. Danach folgt je Person eine Seite."
           }
         },
         "reconfigure": {
-          "title": "Person bearbeiten",
+          "title": "Personen bearbeiten",
+          "data": {
+            "persons": "Personen"
+          },
+          "data_description": {
+            "persons": "Ein Eintrag je Person, z. B. „Anna“, „Ben“. Danach folgt je Person eine Seite."
+          }
+        },
+        "person": {
+          "title": "{person}",
+          "description": "Person {position} von {count}. Umbenennen behält die Einnahmen.",
           "data": {
             "name": "Name",
             "ha_person": "Person in Home Assistant",
@@ -130,10 +137,13 @@
       },
       "error": {
         "no_name": "Bitte einen Namen angeben.",
-        "tag_in_use": "Dieser Tag gehört schon einer anderen Person oder einem anderen Medikament."
+        "tag_in_use": "Dieser Tag gehört schon einer anderen Person oder einem anderen Medikament.",
+        "no_persons": "Mindestens eine Person angeben.",
+        "duplicate_names": "Jeder Name darf nur einmal vorkommen."
       },
       "abort": {
-        "reconfigure_successful": "Person gespeichert."
+        "reconfigure_successful": "Personen gespeichert.",
+        "persons_exist": "Personen gibt es schon. Bearbeiten über das Zahnrad bei „Personen“."
       }
     }
   },

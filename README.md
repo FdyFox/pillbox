@@ -28,10 +28,13 @@ Wer feste Einnahmezeiten braucht (z. B. exakt alle 12 Stunden), mit Verschieben,
 ## Aufbau
 
 - Ein Config-Entry „Pillbox“ (Single Instance). Seine **Optionen** legen die Einnahme-Zeiten des Tages fest: bis zu 6, Standard „Morgens, Mittags, Abends, Nachts“. Umbenennen geht jederzeit; eine Zeit, die noch ein Medikament nutzt, lässt sich nicht löschen.
-- Pro **Person** eine Untereinheit (Typ `person`) und ein Gerät. Optional.
+- Optional eine Untereinheit **„Personen“** (Typ `person`) für alle Personen; jede Person ist ein Gerät darunter. Angelegt über „Personen hinzufügen“, danach bearbeitet über das Zahnrad bei „Personen“: zuerst die Liste der Namen, dann je Person eine Seite. Umbenennen behält die Einnahmen.
 - Pro **Medikament** eine Untereinheit (Typ `medication`), darunter **je Wirkstärke eine Packung** mit eigenem Gerät und Vorrat. In der Integrationsübersicht steht so „Magnesium“ einmal, darunter „Magnesium 10 mg“, „Magnesium 20 mg“ usw.
 
 ### Einstellungen pro Person
+
+Personen verknüpfst du mit Medikamenten am Medikament selbst: Zahnrad am Medikament → Seite der Packung → „Einnahmen“, z. B. „Morgens · Anna“.
+
 
 | Feld | Bedeutung |
 | --- | --- |

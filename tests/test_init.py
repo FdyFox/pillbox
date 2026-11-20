@@ -299,16 +299,46 @@ async def test_shared_pack_and_person_tags(hass, freezer):
     assert _state(hass, "sensor.anna_open_intakes") == "0"
 
 
-async def test_deleted_person_removes_their_intakes(hass, freezer):
+async def test_persons_merged_and_removal(hass, freezer):
     entry = _family_entry(hass)
     freezer.move_to(_at("2026-11-18 07:30:00"))
     await _setup(hass, entry)
-    hass.config_entries.async_remove_subentry(entry, "anna")
+    people = [s for s in entry.subentries.values() if s.subentry_type == "person"]
+    assert len(people) == 1
+    assert [p["name"] for p in people[0].data["persons"]] == ["Anna", "Ben"]
+    assert _state(hass, "sensor.ben_open_intakes") == "2"
+
+    # Anna entfernen und Ben umbenennen: Bens Einnahmen bleiben (gleiche id).
+    result = await entry.start_subentry_reconfigure_flow(hass, people[0].subentry_id)
+    result = await hass.config_entries.subentries.async_configure(result["flow_id"], {"persons": ["Ben"]})
+    result = await hass.config_entries.subentries.async_configure(result["flow_id"], {"name": "Benjamin", "tag_id": "tag-ben"})
+    assert result["reason"] == "reconfigure_successful"
     await hass.async_block_till_done()
     registry = er.async_get(hass)
     assert registry.async_get("switch.anna_magnesium_10_mg_morgens") is None
     assert _state(hass, "switch.ben_magnesium_10_mg_morgens") == "off"
+    assert hass.states.get("switch.ben_magnesium_10_mg_morgens").attributes["friendly_name"] == "Benjamin Magnesium 10 mg Morgens"
     assert _state(hass, "sensor.magnesium_10_mg_days_left") == "30"
+
+
+async def test_merge_moves_entities_and_keeps_ids(hass, freezer):
+    """Beim Zusammenführen werden Entitäten umgehängt statt neu angelegt; Entitäts-IDs bleiben."""
+    entry = _family_entry(hass)
+    registry = er.async_get(hass)
+    custom = registry.async_get_or_create(
+        "sensor", DOMAIN, "ben_open_intakes", suggested_object_id="mein_ben_sensor",
+        config_entry=entry, config_subentry_id="ben",
+    )
+    pack = registry.async_get_or_create(
+        "number", DOMAIN, "m20_stock", suggested_object_id="mein_20er_vorrat",
+        config_entry=entry, config_subentry_id="m20",
+    )
+    freezer.move_to(_at("2026-11-18 07:30:00"))
+    await _setup(hass, entry)
+    assert registry.async_get(custom.entity_id).config_subentry_id == "anna"
+    assert registry.async_get(pack.entity_id).config_subentry_id == "m10"
+    assert _state(hass, "sensor.mein_ben_sensor") == "2"
+    assert _state(hass, "number.mein_20er_vorrat") == "10"
 
 
 # --- Formulare ---------------------------------------------------------------
@@ -325,10 +355,22 @@ async def test_config_person_and_medication_flow(hass):
     assert again["type"] is FlowResultType.ABORT
 
     result = await hass.config_entries.subentries.async_init((entry.entry_id, "person"), context={"source": "user"})
+    result = await hass.config_entries.subentries.async_configure(result["flow_id"], {"persons": ["Anna", " Ben "]})
+    assert result["step_id"] == "person"
+    assert result["description_placeholders"]["person"] == "Anna"
     result = await hass.config_entries.subentries.async_configure(result["flow_id"], {"name": " Anna ", "tag_id": "tag-anna"})
+    bad = await hass.config_entries.subentries.async_configure(result["flow_id"], {"name": "Ben", "tag_id": "tag-anna"})
+    assert bad["errors"] == {"tag_id": "tag_in_use"}
+    result = await hass.config_entries.subentries.async_configure(bad["flow_id"], {"name": "Ben"})
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
-    anna_id = next(s for s, sub in entry.subentries.items() if sub.title == "Anna")
+    people = next(s for s in entry.subentries.values() if s.subentry_type == "person")
+    assert people.title == "People"
+    assert [p["name"] for p in people.data["persons"]] == ["Anna", "Ben"]
+    anna_id = people.data["persons"][0]["id"]
+    # Ein zweites „Personen hinzufügen“ verweist auf den bestehenden Eintrag.
+    again = await hass.config_entries.subentries.async_init((entry.entry_id, "person"), context={"source": "user"})
+    assert again["reason"] == "persons_exist"
 
     result = await hass.config_entries.subentries.async_init((entry.entry_id, "medication"), context={"source": "user"})
     assert result["step_id"] == "user"
@@ -449,6 +491,7 @@ async def test_tag_dropdown_lists_known_tags(hass):
     result = await hass.config_entries.subentries.async_init(
         (entry.entry_id, "person"), context={"source": "user"}
     )
+    result = await hass.config_entries.subentries.async_configure(result["flow_id"], {"persons": ["Anna"]})
     tag_sel = next(v for k, v in result["data_schema"].schema.items() if k == "tag_id")
     cfg = tag_sel.config
     assert cfg["options"] == [
@@ -488,7 +531,7 @@ async def test_person_intakes_on_person_device_keep_entity_id(hass, freezer):
 
     device = dr.async_get(hass).async_get(switch.device_id)
     assert device.name == "Anna"
-    assert switch.config_subentry_id == "anna"
+    assert switch.config_subentry_id == "anna"  # Untereinheit „Personen“ (übernimmt die id der ersten)
     state = hass.states.get(switch.entity_id)
     assert state.attributes["friendly_name"] == "Anna Magnesium 10 mg Morgens"
     assert state.attributes["medication"] == "Magnesium 10 mg"

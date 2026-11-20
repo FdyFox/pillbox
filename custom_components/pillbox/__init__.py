@@ -29,6 +29,7 @@ from .const import (
     CONF_LOW_THRESHOLD,
     CONF_PACK_ID,
     CONF_PACKS,
+    CONF_PERSONS,
     CONF_SLOTS,
     CONF_STOCK,
     CONF_STRENGTH,
@@ -50,6 +51,7 @@ from .const import (
     legacy_intake_names,
     make_key,
     parse_key,
+    persons_title,
     signal,
 )
 from .logic import Medication
@@ -72,6 +74,7 @@ def logical_today(now: datetime | None = None) -> date:
 @dataclass
 class Person:
     name: str
+    sub_id: str  # Untereinheit „Personen“, zu der die Person gehört
     tag_id: str | None = None
     ha_person: str | None = None
 
@@ -120,12 +123,15 @@ class PillboxManager:
         saved_day = saved.get("day")
 
         for sub_id, sub in self.entry.subentries.items():
-            if sub.subentry_type == SUBENTRY_PERSON:
-                self.persons[sub_id] = Person(
-                    name=sub.title, tag_id=sub.data.get(CONF_TAG_ID), ha_person=sub.data.get(CONF_HA_PERSON)
+            if sub.subentry_type != SUBENTRY_PERSON:
+                continue
+            for p in sub.data.get(CONF_PERSONS, []):
+                person_id = p[CONF_PACK_ID]
+                self.persons[person_id] = Person(
+                    name=p[CONF_NAME], sub_id=sub_id, tag_id=p.get(CONF_TAG_ID), ha_person=p.get(CONF_HA_PERSON)
                 )
-                if tag := sub.data.get(CONF_TAG_ID):
-                    self.tags[tag] = (SUBENTRY_PERSON, sub_id)
+                if tag := p.get(CONF_TAG_ID):
+                    self.tags[tag] = (SUBENTRY_PERSON, person_id)
 
         for sub_id, sub in self.entry.subentries.items():
             if sub.subentry_type != SUBENTRY_MEDICATION:
@@ -355,7 +361,27 @@ def _async_migrate(hass: HomeAssistant, entry: ConfigEntry) -> None:
         pack = {CONF_PACK_ID: sub.subentry_id, **data}  # alte subentry_id -> Vorrat und Entitäten bleiben
         hass.config_entries.async_update_subentry(entry, sub, title=name, data={CONF_NAME: name, CONF_PACKS: [pack]})
 
-    # 2. Gleichnamige Medikamente (früher je Wirkstärke ein Eintrag) zusammenführen.
+    # 2. Einzelne Personen (früher je Person ein Eintrag) -> Liste; id bleibt die alte subentry_id.
+    for sub in list(entry.subentries.values()):
+        if sub.subentry_type != SUBENTRY_PERSON or CONF_PERSONS in sub.data:
+            continue
+        person = {CONF_PACK_ID: sub.subentry_id, CONF_NAME: sub.data.get(CONF_NAME) or sub.title}
+        person |= {k: v for k, v in sub.data.items() if k in (CONF_HA_PERSON, CONF_TAG_ID)}
+        hass.config_entries.async_update_subentry(entry, sub, data={CONF_PERSONS: [person]})
+
+    # 3. Alle Personen in eine Untereinheit „Personen“.
+    person_subs = [s for s in entry.subentries.values() if s.subentry_type == SUBENTRY_PERSON]
+    if person_subs:
+        keep, *others = person_subs
+        persons = [p for s in person_subs for p in s.data[CONF_PERSONS]]
+        hass.config_entries.async_update_subentry(
+            entry, keep, title=persons_title(language), data={CONF_PERSONS: persons}
+        )
+        for other in others:
+            _move_to_subentry(hass, entry, other.subentry_id, keep.subentry_id)
+            hass.config_entries.async_remove_subentry(entry, other.subentry_id)
+
+    # 4. Gleichnamige Medikamente (früher je Wirkstärke ein Eintrag) zusammenführen.
     by_name: dict[str, list] = {}
     for sub in entry.subentries.values():
         if sub.subentry_type == SUBENTRY_MEDICATION:
@@ -368,10 +394,29 @@ def _async_migrate(hass: HomeAssistant, entry: ConfigEntry) -> None:
         packs.sort(key=lambda p: str(p.get(CONF_STRENGTH, "")))
         hass.config_entries.async_update_subentry(entry, keep, data={**keep.data, CONF_PACKS: packs})
         for other in others:
+            _move_to_subentry(hass, entry, other.subentry_id, keep.subentry_id)
             hass.config_entries.async_remove_subentry(entry, other.subentry_id)
 
     if slots_changed:
         hass.config_entries.async_update_entry(entry, options={**entry.options, CONF_SLOTS: slots})
+
+
+@callback
+def _move_to_subentry(hass: HomeAssistant, entry: ConfigEntry, old: str, new: str) -> None:
+    """Entitäten und Geräte einer Untereinheit umhängen, bevor sie gelöscht wird (IDs bleiben)."""
+    entities = er.async_get(hass)
+    for reg in er.async_entries_for_config_entry(entities, entry.entry_id):
+        if reg.config_subentry_id == old:
+            entities.async_update_entity(reg.entity_id, config_subentry_id=new)
+    devices = dr.async_get(hass)
+    for device in dr.async_entries_for_config_entry(devices, entry.entry_id):
+        if old in device.config_entries_subentries.get(entry.entry_id, set()):
+            devices.async_update_device(
+                device.id, add_config_entry_id=entry.entry_id, add_config_subentry_id=new
+            )
+            devices.async_update_device(
+                device.id, remove_config_entry_id=entry.entry_id, remove_config_subentry_id=old
+            )
 
 
 def _legacy_keys(data: dict, slots: dict[str, str], language: str | None, title: str) -> list[str]:

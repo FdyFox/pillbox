@@ -26,8 +26,8 @@ async def async_setup_entry(
     for pack_id, med in manager.meds.items():
         for key in med.intakes:
             person_id = parse_key(key)[1]
-            # Der Untereinheit zuordnen, an deren Gerät der Schalter hängt (Person oder Medikament).
-            subentry = person_id or manager.info[pack_id].sub_id
+            # Der Untereinheit zuordnen, an deren Gerät der Schalter hängt (Personen oder Medikament).
+            subentry = manager.persons[person_id].sub_id if person_id else manager.info[pack_id].sub_id
             async_add_entities([IntakeSwitch(manager, pack_id, key)], config_subentry_id=subentry)
 
 

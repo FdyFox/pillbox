@@ -98,25 +98,32 @@
       }
     },
     "person": {
-      "entry_type": "Person",
+      "entry_type": "People",
       "initiate_flow": {
-        "user": "Add person"
+        "user": "Add people"
       },
       "step": {
         "user": {
-          "title": "Add person",
+          "title": "Add people",
           "data": {
-            "name": "Name",
-            "ha_person": "Home Assistant person",
-            "tag_id": "NFC tag"
+            "persons": "People"
           },
           "data_description": {
-            "ha_person": "Optional link to a person in Home Assistant.",
-            "tag_id": "Tag of this person: a scan records all of their open intakes at the next time of day, across all medications."
+            "persons": "One entry per person, e.g. \"Anna\", \"Ben\". Afterwards one page per person."
           }
         },
         "reconfigure": {
-          "title": "Edit person",
+          "title": "Edit people",
+          "data": {
+            "persons": "People"
+          },
+          "data_description": {
+            "persons": "One entry per person, e.g. \"Anna\", \"Ben\". Afterwards one page per person."
+          }
+        },
+        "person": {
+          "title": "{person}",
+          "description": "Person {position} of {count}. Renaming keeps their intakes.",
           "data": {
             "name": "Name",
             "ha_person": "Home Assistant person",
@@ -130,10 +137,13 @@
       },
       "error": {
         "no_name": "Please enter a name.",
-        "tag_in_use": "This tag is already used by another person or medication."
+        "tag_in_use": "This tag is already used by another person or medication.",
+        "no_persons": "Add at least one person.",
+        "duplicate_names": "Each name may appear only once."
       },
       "abort": {
-        "reconfigure_successful": "Person saved."
+        "reconfigure_successful": "People saved.",
+        "persons_exist": "People already exist. Use the gear icon at \"People\" to edit them."
       }
     }
   },

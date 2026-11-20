@@ -30,6 +30,7 @@ from .const import (
     CONF_LOW_THRESHOLD,
     CONF_PACK_ID,
     CONF_PACKS,
+    CONF_PERSONS,
     CONF_SLOTS,
     CONF_STOCK,
     CONF_STRENGTH,
@@ -46,6 +47,7 @@ from .const import (
     make_key,
     ordered_slots,
     parse_key,
+    persons_title,
 )
 
 _NUM = lambda lo, hi: selector.NumberSelector(  # noqa: E731
@@ -64,9 +66,14 @@ def _slots(entry: ConfigEntry, hass: HomeAssistant) -> dict[str, str]:
 
 
 def _persons(entry: ConfigEntry) -> list[tuple[str, str]]:
-    """(subentry_id, Name) aller Personen, alphabetisch."""
+    """(Personen-id, Name) aller Personen, alphabetisch."""
     return sorted(
-        ((sid, sub.title) for sid, sub in entry.subentries.items() if sub.subentry_type == SUBENTRY_PERSON),
+        (
+            (p[CONF_PACK_ID], p[CONF_NAME])
+            for sub in entry.subentries.values()
+            if sub.subentry_type == SUBENTRY_PERSON
+            for p in sub.data.get(CONF_PERSONS, [])
+        ),
         key=lambda p: p[1].casefold(),
     )
 
@@ -78,7 +85,8 @@ def _tag_in_use(entry: ConfigEntry, tag: str | None, own_subentry_id: str | None
     for sid, sub in entry.subentries.items():
         if sid == own_subentry_id:
             continue
-        tags = [sub.data.get(CONF_TAG_ID)] + [p.get(CONF_TAG_ID) for p in sub.data.get(CONF_PACKS, [])]
+        items = [sub.data, *sub.data.get(CONF_PACKS, []), *sub.data.get(CONF_PERSONS, [])]
+        tags = [i.get(CONF_TAG_ID) for i in items]
         if tag in tags:
             return True
     return False
@@ -183,7 +191,22 @@ class PillboxOptionsFlow(OptionsFlow):
         return self.async_show_form(step_id="init", data_schema=schema, errors=errors)
 
 
-# --- Person -----------------------------------------------------------------
+# --- Personen ---------------------------------------------------------------
+#
+# Eine Untereinheit „Personen“ für alle; jede Person wird ein Gerät darunter.
+# Schritt 1: Liste der Personen. Schritt 2 („person“): je Person Name, HA-Person, Tag.
+
+
+def _persons_schema(existing: list[str]) -> vol.Schema:
+    return vol.Schema(
+        {
+            vol.Required(CONF_PERSONS, default=[]): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=existing, multiple=True, custom_value=True, mode=selector.SelectSelectorMode.DROPDOWN
+                )
+            ),
+        }
+    )
 
 
 def _person_schema(hass: HomeAssistant) -> vol.Schema:
@@ -197,41 +220,100 @@ def _person_schema(hass: HomeAssistant) -> vol.Schema:
 
 
 class PersonSubentryFlow(ConfigSubentryFlow):
-    """Person anlegen oder ändern."""
+    """Personen anlegen oder ändern (alle in einer Untereinheit)."""
 
-    def _validate(self, user_input: dict[str, Any], own_id: str | None) -> tuple[dict[str, Any], dict[str, str]]:
-        data = {**user_input, CONF_NAME: user_input[CONF_NAME].strip()}
-        errors: dict[str, str] = {}
-        if not data[CONF_NAME]:
-            errors[CONF_NAME] = "no_name"
-        if _tag_in_use(self._get_entry(), data.get(CONF_TAG_ID), own_id):
-            errors[CONF_TAG_ID] = "tag_in_use"
-        return data, errors
+    def __init__(self) -> None:
+        self._names: list[str] = []
+        self._existing: dict[str, dict[str, Any]] = {}  # Name (casefold) -> gespeicherte Person
+        self._persons: list[dict[str, Any]] = []
+        self._reconfigure = False
 
-    async def async_step_user(self, user_input=None) -> SubentryFlowResult:
+    def _own_id(self) -> str | None:
+        return self._get_reconfigure_subentry().subentry_id if self._reconfigure else None
+
+    async def _async_step_persons(self, step_id: str, user_input, suggested: dict[str, Any]):
         errors: dict[str, str] = {}
-        schema = _person_schema(self.hass)
         if user_input is not None:
-            data, errors = self._validate(user_input, None)
-            if not errors:
-                return self.async_create_entry(title=data[CONF_NAME], data=data)
-            schema = self.add_suggested_values_to_schema(schema, user_input)
-        return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
-
-    async def async_step_reconfigure(self, user_input=None) -> SubentryFlowResult:
-        sub = self._get_reconfigure_subentry()
-        errors: dict[str, str] = {}
-        suggested: dict[str, Any] = dict(sub.data)
-        if user_input is not None:
-            data, errors = self._validate(user_input, sub.subentry_id)
-            if not errors:
-                return self.async_update_and_abort(self._get_entry(), sub, title=data[CONF_NAME], data=data)
+            names = [str(n).strip() for n in user_input.get(CONF_PERSONS, [])]
+            self._names = list(dict.fromkeys(n for n in names if n))
+            if not self._names:
+                errors[CONF_PERSONS] = "no_persons"
+            elif len({n.casefold() for n in self._names}) != len(self._names):
+                errors[CONF_PERSONS] = "duplicate_names"
+            else:
+                self._persons = []
+                return await self.async_step_person()
             suggested = user_input
+        existing = [p[CONF_NAME] for p in self._existing.values()]
         return self.async_show_form(
-            step_id="reconfigure",
-            data_schema=self.add_suggested_values_to_schema(_person_schema(self.hass), suggested),
+            step_id=step_id,
+            data_schema=self.add_suggested_values_to_schema(_persons_schema(existing), suggested),
             errors=errors,
         )
+
+    async def async_step_user(self, user_input=None) -> SubentryFlowResult:
+        if any(s.subentry_type == SUBENTRY_PERSON for s in self._get_entry().subentries.values()):
+            return self.async_abort(reason="persons_exist")
+        return await self._async_step_persons("user", user_input, {})
+
+    async def async_step_reconfigure(self, user_input=None) -> SubentryFlowResult:
+        self._reconfigure = True
+        persons = self._get_reconfigure_subentry().data.get(CONF_PERSONS, [])
+        self._existing = {p[CONF_NAME].casefold(): p for p in persons}
+        suggested = {CONF_PERSONS: [p[CONF_NAME] for p in persons]}
+        return await self._async_step_persons("reconfigure", user_input, suggested)
+
+    async def async_step_person(self, user_input=None) -> SubentryFlowResult:
+        """Eine Person bearbeiten (Name änderbar, die Zuordnung zu Einnahmen bleibt)."""
+        name = self._names[len(self._persons)]
+        existing = self._existing.get(name.casefold())
+        errors: dict[str, str] = {}
+        suggested = {k: v for k, v in (existing or {CONF_NAME: name}).items() if k != CONF_PACK_ID}
+
+        if user_input is not None:
+            person = {**user_input, CONF_NAME: user_input[CONF_NAME].strip()}
+            tag = person.get(CONF_TAG_ID)
+            other_names = {p[CONF_NAME].casefold() for p in self._persons} | {
+                n.casefold() for n in self._names[len(self._persons) + 1 :]
+            }
+            if not person[CONF_NAME]:
+                errors[CONF_NAME] = "no_name"
+            elif person[CONF_NAME].casefold() in other_names:
+                errors[CONF_NAME] = "duplicate_names"
+            if tag and (
+                _tag_in_use(self._get_entry(), tag, self._own_id())
+                or any(p.get(CONF_TAG_ID) == tag for p in self._persons)
+            ):
+                errors[CONF_TAG_ID] = "tag_in_use"
+            if not errors:
+                person_id = existing[CONF_PACK_ID] if existing else uuid.uuid4().hex[:12]
+                self._persons.append({CONF_PACK_ID: person_id, **person})
+                if len(self._persons) < len(self._names):
+                    return await self.async_step_person()
+                return self._async_finish()
+            suggested = user_input
+
+        return self.async_show_form(
+            step_id="person",
+            data_schema=self.add_suggested_values_to_schema(_person_schema(self.hass), suggested),
+            errors=errors,
+            description_placeholders={
+                "person": name,
+                "position": str(len(self._persons) + 1),
+                "count": str(len(self._names)),
+            },
+            last_step=len(self._persons) + 1 == len(self._names),
+        )
+
+    @callback
+    def _async_finish(self) -> SubentryFlowResult:
+        data = {CONF_PERSONS: self._persons}
+        title = persons_title(self.hass.config.language)
+        if self._reconfigure:
+            return self.async_update_and_abort(
+                self._get_entry(), self._get_reconfigure_subentry(), title=title, data=data
+            )
+        return self.async_create_entry(title=title, data=data)
 
 
 # --- Medikament -------------------------------------------------------------
