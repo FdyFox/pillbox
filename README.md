@@ -139,11 +139,11 @@ Entity IDs follow the device, e.g. `number.magnesium_10_mg_stock`. Pillbox never
 
 [`blueprints/automation/pillbox/intake_reminder.yaml`](blueprints/automation/pillbox/intake_reminder.yaml), one automation per intake:
 
-- Inputs: intake switch, time Mon–Fri and Sat–Sun, notify action (e.g. `notify.mobile_app_phone`), repeat interval in minutes (0 = once), last reminder (default 22:00), title and message.
+- Inputs: intake switch, time Mon–Fri and Sat–Sun, notify action (e.g. `notify.mobile_app_phone`), repeat interval in minutes (0 = once), last reminder (default 22:00), title, message and button text.
 - Reminds from the given time while the switch is off and stops as soon as the intake is done.
 - With `notify.mobile_app_*`: a "Taken" button in the notification checks off the intake directly; done reminders are removed from the phone.
 
-The blueprint's texts are currently in German; title and message can be set via the inputs.
+Defaults: title = medication and strength, message "<intake>: not taken yet.", button "Taken". All three can be changed via the inputs, e.g. to another language; `{{ medication }}` and `{{ intake }}` can be used in title and message.
 
 Import: Settings → Automations → Blueprints → "Import blueprint" with the file's GitHub URL, or copy the file to `/config/blueprints/automation/pillbox/`.
 

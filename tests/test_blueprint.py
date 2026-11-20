@@ -88,7 +88,8 @@ async def test_reminds_repeats_and_take_button(hass, tmp_path, freezer):
     await _tick(hass, freezer, "2026-11-18 08:00:00")
     assert len(calls) == 1
     assert calls[0].data["title"] == "Magnesium"
-    assert calls[0].data["message"] == "Morgens: noch nicht genommen."
+    assert calls[0].data["message"] == "Morgens: not taken yet."
+    assert calls[0].data["data"]["actions"][0]["title"] == "Taken"
     assert calls[0].data["data"]["actions"][0]["action"] == f"PILLBOX_{SWITCH}"
 
     await _tick(hass, freezer, "2026-11-18 09:00:01")

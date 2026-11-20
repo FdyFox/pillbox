@@ -1,39 +1,39 @@
 blueprint:
-  name: Pillbox – Erinnerung an eine Einnahme
+  name: Pillbox – intake reminder
   description: >-
-    Erinnert ab einer Uhrzeit an eine Pillbox-Einnahme (z. B. „Vitamin D Morgens“), solange
-    deren Schalter aus ist, und wiederholt die Erinnerung bis zu einer Endzeit.
-    Bei Handy-Benachrichtigungen (mobile_app) gibt es einen Knopf „Genommen“, der die
-    Einnahme direkt abhakt. Pro Einnahme eine Automation anlegen.
+    Reminds you of a Pillbox intake (e.g. "Vitamin D Morning") from a given time while
+    its switch is off, and repeats the reminder until an end time.
+    Phone notifications (mobile_app) get a "Taken" button that checks off the intake
+    directly. Create one automation per intake.
   domain: automation
   source_url: https://github.com/FdyFox/pillbox/blob/main/blueprints/automation/pillbox/intake_reminder.yaml
   input:
     intake_switch:
-      name: Einnahme
-      description: Schalter der Einnahme, z. B. switch.vitamin_d_morgens
+      name: Intake
+      description: Switch of the intake, e.g. switch.vitamin_d_morning
       selector:
         entity:
           filter:
             - integration: pillbox
               domain: switch
     time_weekday:
-      name: Erinnerung ab (Mo–Fr)
+      name: Remind from (Mon–Fri)
       default: "08:00:00"
       selector:
         time: {}
     time_weekend:
-      name: Erinnerung ab (Sa–So)
+      name: Remind from (Sat–Sun)
       default: "10:00:00"
       selector:
         time: {}
     notify_action:
-      name: Benachrichtigungs-Action
-      description: z. B. notify.mobile_app_handy
+      name: Notify action
+      description: e.g. notify.mobile_app_phone
       selector:
         text: {}
     repeat_minutes:
-      name: Wiederholen alle … Minuten
-      description: 0 = nur einmal erinnern
+      name: Repeat every … minutes
+      description: 0 = remind only once
       default: 60
       selector:
         number:
@@ -43,18 +43,24 @@ blueprint:
           unit_of_measurement: min
           mode: box
     last_reminder:
-      name: Letzte Erinnerung um
+      name: Last reminder at
       default: "22:00:00"
       selector:
         time: {}
     title:
-      name: Titel
+      name: Title
       default: "{{ medication }}"
       selector:
         text: {}
     message:
-      name: Nachricht
-      default: "{{ intake }}: noch nicht genommen."
+      name: Message
+      default: "{{ intake }}: not taken yet."
+      selector:
+        text: {}
+    button_title:
+      name: Button text
+      description: Text of the button in phone notifications that checks off the intake
+      default: Taken
       selector:
         text: {}
 
@@ -84,6 +90,7 @@ variables:
   medication: "{{ state_attr(switch_entity, 'medication') or device_attr(device_id(switch_entity), 'name') }}"
   intake: "{{ state_attr(switch_entity, 'intake') }}"
   action_id: "PILLBOX_{{ switch_entity }}"
+  button_title: !input button_title
   is_mobile_app: "{{ notify_action.startswith('notify.mobile_app_') }}"
 
 conditions:
@@ -134,7 +141,7 @@ actions:
                 title: !input title
                 message: !input message
                 data: >-
-                  {{ {'tag': action_id, 'actions': [{'action': action_id, 'title': 'Genommen'}]}
+                  {{ {'tag': action_id, 'actions': [{'action': action_id, 'title': button_title}]}
                      if is_mobile_app else {} }}
             - if:
                 - condition: template
