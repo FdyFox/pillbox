@@ -95,11 +95,18 @@ def _tag_selector(hass: HomeAssistant) -> selector.SelectSelector:
     )
 
 
-def _intake_options(slots: dict[str, str], persons: list[tuple[str, str]]) -> list[selector.SelectOptionDict]:
-    """Alle wählbaren Einnahmen: je Einnahme-Zeit „ohne Person“ und je Person."""
+def _intake_options(
+    slots: dict[str, str], persons: list[tuple[str, str]], selected: list[str] | None = None
+) -> list[selector.SelectOptionDict]:
+    """Wählbare Einnahmen: je Einnahme-Zeit und Person.
+
+    Einnahmen ohne Person gibt es nur, solange keine Personen angelegt sind (oder eine schon gewählt ist).
+    """
+    selected = selected or []
     options: list[selector.SelectOptionDict] = []
     for slot_id, slot_name in ordered_slots(slots):
-        options.append(selector.SelectOptionDict(value=make_key(slot_id, None), label=slot_name))
+        if not persons or make_key(slot_id, None) in selected:
+            options.append(selector.SelectOptionDict(value=make_key(slot_id, None), label=slot_name))
         options.extend(
             selector.SelectOptionDict(value=make_key(slot_id, pid), label=f"{slot_name} · {pname}")
             for pid, pname in persons
@@ -223,17 +230,19 @@ class PersonSubentryFlow(ConfigSubentryFlow):
 # --- Medikament -------------------------------------------------------------
 
 
-def _medication_schema(hass: HomeAssistant, entry: ConfigEntry) -> vol.Schema:
+def _medication_schema(hass: HomeAssistant, entry: ConfigEntry, selected: list[str] | None = None) -> vol.Schema:
     slots = _slots(entry, hass)
-    first_slot = ordered_slots(slots)[0][0]
+    persons = _persons(entry)
+    # Ohne Personen: erste Einnahme-Zeit vorbelegen; mit Personen bewusst auswählen lassen.
+    default = [] if persons else [make_key(ordered_slots(slots)[0][0], None)]
     return vol.Schema(
         {
             vol.Required(CONF_NAME): str,
             vol.Optional(CONF_STRENGTH): str,
             vol.Required(CONF_STOCK): _NUM(0, 1000),
-            vol.Required(CONF_INTAKES, default=[make_key(first_slot, None)]): selector.SelectSelector(
+            vol.Required(CONF_INTAKES, default=default): selector.SelectSelector(
                 selector.SelectSelectorConfig(
-                    options=_intake_options(slots, _persons(entry)),
+                    options=_intake_options(slots, persons, selected),
                     multiple=True,
                     sort=False,
                     mode=selector.SelectSelectorMode.LIST,
@@ -286,7 +295,8 @@ class MedicationSubentryFlow(ConfigSubentryFlow):
         return data, errors
 
     def _title(self, data: dict[str, Any]) -> str:
-        return data[CONF_NAME]
+        """Titel in der Integrationsübersicht, mit Wirkstärke: „Magnesium 10 mg“."""
+        return f"{data[CONF_NAME]} {data[CONF_STRENGTH]}" if data.get(CONF_STRENGTH) else data[CONF_NAME]
 
     async def async_step_user(self, user_input=None) -> SubentryFlowResult:
         errors: dict[str, str] = {}
@@ -309,6 +319,8 @@ class MedicationSubentryFlow(ConfigSubentryFlow):
             suggested = user_input
         return self.async_show_form(
             step_id="reconfigure",
-            data_schema=self.add_suggested_values_to_schema(_medication_schema(self.hass, self._get_entry()), suggested),
+            data_schema=self.add_suggested_values_to_schema(
+                _medication_schema(self.hass, self._get_entry(), list(sub.data.get(CONF_INTAKES, []))), suggested
+            ),
             errors=errors,
         )

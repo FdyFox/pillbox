@@ -326,7 +326,8 @@ async def test_config_person_and_medication_flow(hass):
     result = await hass.config_entries.subentries.async_init((entry.entry_id, "medication"), context={"source": "user"})
     options = next(v for k, v in result["data_schema"].schema.items() if k == "intakes").config["options"]
     assert {"value": f"1|{anna_id}", "label": "Morning · Anna"} in options
-    assert options[0] == {"value": "1|", "label": "Morning"}
+    # Mit Personen gibt es keine Einnahmen „ohne Person“ mehr zur Auswahl.
+    assert all(not o["value"].endswith("|") for o in options)
 
     user_input = {
         "name": " Magnesium ",
@@ -341,6 +342,7 @@ async def test_config_person_and_medication_flow(hass):
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
     sub = next(s for s in entry.subentries.values() if s.subentry_type == "medication")
+    assert sub.title == "Magnesium 10 mg"
     assert dict(sub.data) == {
         "name": "Magnesium",
         "strength": "10 mg",
@@ -398,3 +400,10 @@ async def test_tag_dropdown_lists_known_tags(hass):
         {"value": "abc-123", "label": "Tag abc-123"},
     ]
     assert cfg["custom_value"] is True
+
+
+async def test_existing_title_gets_strength(hass, freezer):
+    entry = _make_entry(hass, {**MED_DATA, "strength": "10mg"})
+    await _setup(hass, entry)
+    assert entry.subentries[SUB_ID].title == "Vitamin D 10mg"
+    assert _state(hass, "number.vitamin_d_10mg_stock") == "53"

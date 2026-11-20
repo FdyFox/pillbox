@@ -15,6 +15,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_NAME
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
@@ -147,7 +148,7 @@ class PillboxManager:
             keys = sorted(data_keys, key=self._slot_order)
 
             self.meds[sub_id] = Medication(
-                name=sub.title,
+                name=d.get(CONF_NAME) or sub.title,
                 stock=stock,
                 intakes=keys,
                 tablets_per_intake=int(d.get(CONF_TABLETS_PER_INTAKE, 1)),
@@ -155,7 +156,7 @@ class PillboxManager:
                 taken=[bool(saved_taken.get(k, False)) for k in keys],
             )
             self.info[sub_id] = MedInfo(
-                name=sub.title, strength=d.get(CONF_STRENGTH) or None, tag_id=d.get(CONF_TAG_ID), config=dict(d)
+                name=d.get(CONF_NAME) or sub.title, strength=d.get(CONF_STRENGTH) or None, tag_id=d.get(CONF_TAG_ID), config=dict(d)
             )
             self._config_stock[sub_id] = config_stock
             if tag := d.get(CONF_TAG_ID):
@@ -338,6 +339,10 @@ def _async_migrate(hass: HomeAssistant, entry: ConfigEntry) -> None:
         if sub.subentry_type != SUBENTRY_MEDICATION:
             continue
         data = dict(sub.data)
+        # Titel mit Wirkstärke, damit gleichnamige Packungen unterscheidbar sind.
+        if (strength := data.get(CONF_STRENGTH)) and sub.title == data.get(CONF_NAME):
+            hass.config_entries.async_update_subentry(entry, sub, title=f"{sub.title} {strength}")
+            sub = entry.subentries[sub.subentry_id]
         intakes = data.get(CONF_INTAKES)
         new_format = bool(intakes) and all("|" in str(i) for i in intakes)
         if new_format and not any(f in data for f in LEGACY_FIELDS):
