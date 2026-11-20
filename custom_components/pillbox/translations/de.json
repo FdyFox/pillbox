@@ -40,24 +40,60 @@
       "step": {
         "user": {
           "title": "Medikament hinzufügen",
-          "description": "Danach folgt je Wirkstärke eine Seite.",
+          "description": "Ein Medikament mit seinen Packungen. Vorrat, Einnahmen und Tag auf dieser Seite gelten für die erste Wirkstärke; jede weitere Wirkstärke bekommt danach eine eigene Seite.",
           "data": {
             "name": "Name",
-            "strengths": "Wirkstärken"
+            "strengths": "Wirkstärken",
+            "stock": "Vorrat (Stück)",
+            "intakes": "Einnahmen",
+            "tag_id": "NFC-Tag"
           },
           "data_description": {
-            "strengths": "Eine Packung je Wirkstärke, z. B. „10 mg“, „20 mg“. Jede Packung hat ihren eigenen Vorrat. Leer lassen für nur eine Packung."
+            "strengths": "Eine Packung je Wirkstärke, z. B. „10 mg“, „20 mg“. Jede Packung hat ihren eigenen Vorrat. Leer lassen für nur eine Packung.",
+            "stock": "Eine Änderung überschreibt den aktuellen Vorrat.",
+            "intakes": "Wer nimmt wann. Einnahme-Zeiten stehen in den Pillbox-Optionen, Personen über „Personen hinzufügen“.",
+            "tag_id": "Optional, Tag an der Packung: Ein Scan erfasst die nächste offene Einnahme dieses Medikaments."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Dosierung und Warnung",
+              "data": {
+                "tablets_per_intake": "Tabletten pro Einnahme",
+                "low_threshold": "Warnschwelle Vorrat"
+              },
+              "data_description": {
+                "low_threshold": "Warnung, wenn der Vorrat unter diese Stückzahl fällt."
+              }
+            }
           }
         },
         "reconfigure": {
           "title": "Medikament bearbeiten",
-          "description": "Danach folgt je Wirkstärke eine Seite.",
+          "description": "Ein Medikament mit seinen Packungen. Vorrat, Einnahmen und Tag auf dieser Seite gelten für die erste Wirkstärke; jede weitere Wirkstärke bekommt danach eine eigene Seite.",
           "data": {
             "name": "Name",
-            "strengths": "Wirkstärken"
+            "strengths": "Wirkstärken",
+            "stock": "Vorrat (Stück)",
+            "intakes": "Einnahmen",
+            "tag_id": "NFC-Tag"
           },
           "data_description": {
-            "strengths": "Eine Packung je Wirkstärke, z. B. „10 mg“, „20 mg“. Jede Packung hat ihren eigenen Vorrat. Leer lassen für nur eine Packung."
+            "strengths": "Eine Packung je Wirkstärke, z. B. „10 mg“, „20 mg“. Jede Packung hat ihren eigenen Vorrat. Leer lassen für nur eine Packung.",
+            "stock": "Eine Änderung überschreibt den aktuellen Vorrat.",
+            "intakes": "Wer nimmt wann. Einnahme-Zeiten stehen in den Pillbox-Optionen, Personen über „Personen hinzufügen“.",
+            "tag_id": "Optional, Tag an der Packung: Ein Scan erfasst die nächste offene Einnahme dieses Medikaments."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Dosierung und Warnung",
+              "data": {
+                "tablets_per_intake": "Tabletten pro Einnahme",
+                "low_threshold": "Warnschwelle Vorrat"
+              },
+              "data_description": {
+                "low_threshold": "Warnung, wenn der Vorrat unter diese Stückzahl fällt."
+              }
+            }
           }
         },
         "pack": {
@@ -70,7 +106,7 @@
           },
           "data_description": {
             "stock": "Eine Änderung überschreibt den aktuellen Vorrat.",
-            "intakes": "Wer nimmt wann. Einnahme-Zeiten stehen in den Pillbox-Optionen, Personen über „Person hinzufügen“.",
+            "intakes": "Wer nimmt wann. Einnahme-Zeiten stehen in den Pillbox-Optionen, Personen über „Personen hinzufügen“.",
             "tag_id": "Optional, Tag an der Packung: Ein Scan erfasst die nächste offene Einnahme dieses Medikaments."
           },
           "sections": {

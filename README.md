@@ -74,7 +74,7 @@ Pillbox                      ⚙ times of day
 
 ### Medication and packs
 
-"Add medication" first asks for name and strengths, then shows one page per strength for the pack. Editing via the gear icon at the medication works the same way; a new strength adds a pack, a removed one deletes it. **This is also where you link people to medications**: on the pack's page, in the "Intakes" field.
+"Add medication" shows name, strengths and the first pack (stock, intakes, tag, dosage) on one page, so a medication with a single strength is done in one step. Each further strength gets its own page. Editing via the gear icon at the medication works the same way; a new strength adds a pack, a removed one deletes it. **This is also where you link people to medications**: in the "Intakes" field (for example "Morning · Anna").
 
 | Field | Meaning | Default |
 | --- | --- | --- |

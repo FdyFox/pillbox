@@ -374,24 +374,23 @@ async def test_config_person_and_medication_flow(hass):
 
     result = await hass.config_entries.subentries.async_init((entry.entry_id, "medication"), context={"source": "user"})
     assert result["step_id"] == "user"
-    bad = await hass.config_entries.subentries.async_configure(
-        result["flow_id"], {"name": "Magnesium", "strengths": ["10 mg", "10 MG"]}
-    )
-    assert bad["errors"] == {"strengths": "duplicate_strengths"}
-    result = await hass.config_entries.subentries.async_configure(
-        bad["flow_id"], {"name": " Magnesium ", "strengths": ["10 mg", " 20 mg "]}
-    )
-    assert result["step_id"] == "pack"
-    assert result["description_placeholders"]["medication"] == "Magnesium 10 mg"
+    # Name, strengths and the first pack share one page.
     options = next(v for k, v in result["data_schema"].schema.items() if k == "intakes").config["options"]
     assert {"value": f"1|{anna_id}", "label": "Morning · Anna"} in options
     # With people, intakes "without a person" are no longer offered.
     assert all(not o["value"].endswith("|") for o in options)
 
     pack10 = {"stock": 12.0, "intakes": [f"1|{anna_id}", f"2|{anna_id}"], "advanced": {"tablets_per_intake": 1.0, "low_threshold": 5.0}}
-    bad = await hass.config_entries.subentries.async_configure(result["flow_id"], {**pack10, "tag_id": "tag-anna"})
+    page1 = {"name": " Magnesium ", "strengths": ["10 mg", " 20 mg "], **pack10}
+    bad = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], {**page1, "strengths": ["10 mg", "10 MG"]}
+    )
+    assert bad["errors"] == {"strengths": "duplicate_strengths"}
+    bad = await hass.config_entries.subentries.async_configure(bad["flow_id"], {**page1, "intakes": []})
+    assert bad["errors"] == {"intakes": "no_intakes"}
+    bad = await hass.config_entries.subentries.async_configure(bad["flow_id"], {**page1, "tag_id": "tag-anna"})
     assert bad["errors"] == {"tag_id": "tag_in_use"}
-    result = await hass.config_entries.subentries.async_configure(bad["flow_id"], pack10)
+    result = await hass.config_entries.subentries.async_configure(bad["flow_id"], page1)
     assert result["step_id"] == "pack"
     assert result["description_placeholders"]["medication"] == "Magnesium 20 mg"
     result = await hass.config_entries.subentries.async_configure(
@@ -426,17 +425,17 @@ async def test_reconfigure_keeps_and_removes_packs(hass, freezer):
     result = await entry.start_subentry_reconfigure_flow(hass, sub_id)
     schema = result["data_schema"].schema
     suggested = {str(k): (k.description or {}).get("suggested_value") for k in schema}
-    assert suggested == {"name": "Magnesium", "strengths": ["10 mg", "20 mg"]}
+    # Page 1 is prefilled with the first pack (10 mg).
+    assert suggested["name"] == "Magnesium" and suggested["strengths"] == ["10 mg", "20 mg"]
+    assert suggested["stock"] == 30 and suggested["intakes"] == ["1|anna", "1|ben", "2|anna"]
+    assert result["last_step"] is False
     # Remove 20 mg, add 30 mg.
     result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"], {"name": "Magnesium", "strengths": ["10 mg", "30 mg"]}
+        result["flow_id"],
+        {"name": "Magnesium", "strengths": ["10 mg", "30 mg"], "stock": 30, "intakes": ["1|anna", "1|ben", "2|anna"], "advanced": {}},
     )
-    pack_schema = result["data_schema"].schema
-    pre = {str(k): (k.description or {}).get("suggested_value") for k in pack_schema}
-    assert pre["stock"] == 30 and pre["intakes"] == ["1|anna", "1|ben", "2|anna"]
-    result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"], {"stock": 30, "intakes": ["1|anna", "1|ben", "2|anna"], "advanced": {}}
-    )
+    assert result["step_id"] == "pack"
+    assert result["description_placeholders"]["medication"] == "Magnesium 30 mg"
     result = await hass.config_entries.subentries.async_configure(
         result["flow_id"], {"stock": 7, "intakes": ["1|ben"], "advanced": {}}
     )
@@ -471,11 +470,18 @@ async def test_options_rename_and_protect_slots(hass, entry):
 async def test_reconfigure_prefills_section(hass, entry):
     await _setup(hass, entry)
     result = await entry.start_subentry_reconfigure_flow(hass, SUB_ID)
-    result = await hass.config_entries.subentries.async_configure(result["flow_id"], {"name": "Vitamin D", "strengths": []})
-    assert result["step_id"] == "pack"
+    # One strength: everything on one page, the button says "Submit".
+    assert result["step_id"] == "reconfigure" and result["last_step"] is True
     advanced = next(v for k, v in result["data_schema"].schema.items() if str(k) == "advanced")
     sub_suggested = {str(k): (k.description or {}).get("suggested_value") for k in advanced.schema.schema}
     assert sub_suggested == {"tablets_per_intake": 1, "low_threshold": 20}
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"],
+        {"name": "Vitamin D", "strengths": [], "stock": 40, "intakes": ["1|"], "advanced": {"tablets_per_intake": 2, "low_threshold": 20}},
+    )
+    assert result["type"] is FlowResultType.ABORT and result["reason"] == "reconfigure_successful"
+    await hass.async_block_till_done()
+    assert _state(hass, "number.vitamin_d_stock") == "40"
 
 
 async def test_tag_dropdown_lists_known_tags(hass):

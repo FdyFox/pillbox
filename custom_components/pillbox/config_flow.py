@@ -249,6 +249,7 @@ class PersonSubentryFlow(ConfigSubentryFlow):
             step_id=step_id,
             data_schema=self.add_suggested_values_to_schema(_persons_schema(existing), suggested),
             errors=errors,
+            last_step=False,  # one page per person follows
         )
 
     async def async_step_user(self, user_input=None) -> SubentryFlowResult:
@@ -318,8 +319,9 @@ class PersonSubentryFlow(ConfigSubentryFlow):
 
 # --- Medication -------------------------------------------------------------
 #
-# Step 1 ("user" or "reconfigure"): name and strengths.
-# Step 2 ("pack"): one page per strength with stock, intakes, tag and dosage.
+# Step 1 ("user" or "reconfigure"): name, strengths and the first pack (stock, intakes, tag, dosage),
+# so a medication with one strength fits on one page.
+# Step 2 ("pack"): one more page per further strength.
 
 
 def _medication_schema(entry: ConfigEntry) -> vol.Schema:
@@ -344,34 +346,32 @@ def _medication_schema(entry: ConfigEntry) -> vol.Schema:
     )
 
 
-def _pack_schema(hass: HomeAssistant, entry: ConfigEntry, selected: list[str] | None = None) -> vol.Schema:
+def _pack_fields(hass: HomeAssistant, entry: ConfigEntry, selected: list[str] | None = None) -> dict:
     slots = _slots(entry, hass)
     persons = _persons(entry)
     # Without people: preselect the first time of day; with people, let the user choose.
     default = [] if persons else [make_key(ordered_slots(slots)[0][0], None)]
-    return vol.Schema(
-        {
-            vol.Required(CONF_STOCK): _NUM(0, 1000),
-            vol.Required(CONF_INTAKES, default=default): selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=_intake_options(slots, persons, selected),
-                    multiple=True,
-                    sort=False,
-                    mode=selector.SelectSelectorMode.DROPDOWN,  # chips instead of a long checkbox list
-                )
+    return {
+        vol.Required(CONF_STOCK): _NUM(0, 1000),
+        vol.Required(CONF_INTAKES, default=default): selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=_intake_options(slots, persons, selected),
+                multiple=True,
+                sort=False,
+                mode=selector.SelectSelectorMode.DROPDOWN,  # chips instead of a long checkbox list
+            )
+        ),
+        vol.Optional(CONF_TAG_ID): _tag_selector(hass),
+        vol.Required(SECTION_ADVANCED): section(
+            vol.Schema(
+                {
+                    vol.Required(CONF_TABLETS_PER_INTAKE, default=1): _NUM(1, 10),
+                    vol.Required(CONF_LOW_THRESHOLD, default=DEFAULT_LOW_THRESHOLD): _NUM(0, 1000),
+                }
             ),
-            vol.Optional(CONF_TAG_ID): _tag_selector(hass),
-            vol.Required(SECTION_ADVANCED): section(
-                vol.Schema(
-                    {
-                        vol.Required(CONF_TABLETS_PER_INTAKE, default=1): _NUM(1, 10),
-                        vol.Required(CONF_LOW_THRESHOLD, default=DEFAULT_LOW_THRESHOLD): _NUM(0, 1000),
-                    }
-                ),
-                {"collapsed": True},
-            ),
-        }
-    )
+            {"collapsed": True},
+        ),
+    }
 
 
 def _pack_suggested(pack: dict[str, Any]) -> dict[str, Any]:
@@ -379,6 +379,18 @@ def _pack_suggested(pack: dict[str, Any]) -> dict[str, Any]:
     values = {k: v for k, v in pack.items() if k not in (*_ADVANCED_FIELDS, CONF_PACK_ID, CONF_STRENGTH)}
     values[SECTION_ADVANCED] = {k: pack[k] for k in _ADVANCED_FIELDS if k in pack}
     return values
+
+
+def _parse_pack(user_input: dict[str, Any]) -> dict[str, Any]:
+    """Pack fields from a form (section flattened, numbers as int)."""
+    keys = (CONF_STOCK, CONF_INTAKES, CONF_TAG_ID)
+    pack: dict[str, Any] = {k: user_input[k] for k in keys if k in user_input}
+    pack.update(user_input.get(SECTION_ADVANCED, {}))
+    for key in _INT_FIELDS:
+        if key in pack:
+            pack[key] = int(pack[key])  # NumberSelector returns float
+    pack[CONF_INTAKES] = list(dict.fromkeys(pack.get(CONF_INTAKES, [])))
+    return pack
 
 
 class MedicationSubentryFlow(ConfigSubentryFlow):
@@ -394,24 +406,54 @@ class MedicationSubentryFlow(ConfigSubentryFlow):
     def _own_id(self) -> str | None:
         return self._get_reconfigure_subentry().subentry_id if self._reconfigure else None
 
+    def _pack_errors(self, pack: dict[str, Any]) -> dict[str, str]:
+        errors: dict[str, str] = {}
+        tag = pack.get(CONF_TAG_ID)
+        if not pack[CONF_INTAKES]:
+            errors[CONF_INTAKES] = "no_intakes"
+        if tag and (
+            _tag_in_use(self._get_entry(), tag, self._own_id()) or any(p.get(CONF_TAG_ID) == tag for p in self._packs)
+        ):
+            errors[CONF_TAG_ID] = "tag_in_use"
+        return errors
+
+    def _add_pack(self, pack: dict[str, Any]) -> SubentryFlowResult | None:
+        """Store the pack for the next strength; finish after the last one."""
+        strength = self._strengths[len(self._packs)]
+        existing = self._existing.get(strength.casefold())
+        pack_id = existing[CONF_PACK_ID] if existing else uuid.uuid4().hex[:12]
+        self._packs.append({CONF_PACK_ID: pack_id, CONF_STRENGTH: strength, **pack})
+        if len(self._packs) < len(self._strengths):
+            return None
+        return self._async_finish()
+
     async def _async_step_medication(self, step_id: str, user_input, suggested: dict[str, Any]):
+        """Name, strengths and the first pack on one page."""
         errors: dict[str, str] = {}
         if user_input is not None:
             self._name = user_input[CONF_NAME].strip()
             strengths = [str(x).strip() for x in user_input.get(CONF_STRENGTHS, [])]
             self._strengths = list(dict.fromkeys(x for x in strengths if x)) or [""]
+            self._packs = []
+            pack = _parse_pack(user_input)
             if not self._name:
                 errors[CONF_NAME] = "no_name"
             elif len({x.casefold() for x in self._strengths}) != len(self._strengths):
                 errors[CONF_STRENGTHS] = "duplicate_strengths"
-            else:
-                self._packs = []
-                return await self.async_step_pack()
+            errors.update(self._pack_errors(pack))
+            if not errors:
+                return self._add_pack(pack) or await self.async_step_pack()
             suggested = user_input
+
+        entry = self._get_entry()
+        first = next(iter(self._existing.values()), None)
+        selected = list(first.get(CONF_INTAKES, [])) if first else []
+        schema = vol.Schema({**_medication_schema(entry).schema, **_pack_fields(self.hass, entry, selected)})
         return self.async_show_form(
             step_id=step_id,
-            data_schema=self.add_suggested_values_to_schema(_medication_schema(self._get_entry()), suggested),
+            data_schema=self.add_suggested_values_to_schema(schema, suggested),
             errors=errors,
+            last_step=len(self._existing) <= 1,
         )
 
     async def async_step_user(self, user_input=None) -> SubentryFlowResult:
@@ -423,45 +465,31 @@ class MedicationSubentryFlow(ConfigSubentryFlow):
         packs = sub.data.get(CONF_PACKS, [])
         self._existing = {str(p.get(CONF_STRENGTH, "")).casefold(): p for p in packs}
         suggested = {
+            **(_pack_suggested(packs[0]) if packs else {}),
             CONF_NAME: sub.data.get(CONF_NAME, sub.title),
             CONF_STRENGTHS: [p[CONF_STRENGTH] for p in packs if p.get(CONF_STRENGTH)],
         }
         return await self._async_step_medication("reconfigure", user_input, suggested)
 
     async def async_step_pack(self, user_input=None) -> SubentryFlowResult:
-        """Edit one pack (strength); then the next one or finish."""
+        """One page per further strength; then finish."""
         strength = self._strengths[len(self._packs)]
         existing = self._existing.get(strength.casefold())
-        entry = self._get_entry()
         errors: dict[str, str] = {}
         suggested = _pack_suggested(existing) if existing else {}
 
         if user_input is not None:
-            pack: dict[str, Any] = {k: v for k, v in user_input.items() if k != SECTION_ADVANCED}
-            pack.update(user_input.get(SECTION_ADVANCED, {}))
-            for key in _INT_FIELDS:
-                if key in pack:
-                    pack[key] = int(pack[key])  # NumberSelector returns float
-            pack[CONF_INTAKES] = list(dict.fromkeys(pack.get(CONF_INTAKES, [])))
-            tag = pack.get(CONF_TAG_ID)
-            if not pack[CONF_INTAKES]:
-                errors[CONF_INTAKES] = "no_intakes"
-            if tag and (
-                _tag_in_use(entry, tag, self._own_id()) or any(p.get(CONF_TAG_ID) == tag for p in self._packs)
-            ):
-                errors[CONF_TAG_ID] = "tag_in_use"
+            pack = _parse_pack(user_input)
+            errors = self._pack_errors(pack)
             if not errors:
-                pack_id = existing[CONF_PACK_ID] if existing else uuid.uuid4().hex[:12]
-                self._packs.append({CONF_PACK_ID: pack_id, CONF_STRENGTH: strength, **pack})
-                if len(self._packs) < len(self._strengths):
-                    return await self.async_step_pack()
-                return self._async_finish()
+                return self._add_pack(pack) or await self.async_step_pack()
             suggested = user_input
 
         selected = list(existing.get(CONF_INTAKES, [])) if existing else []
+        schema = vol.Schema(_pack_fields(self.hass, self._get_entry(), selected))
         return self.async_show_form(
             step_id="pack",
-            data_schema=self.add_suggested_values_to_schema(_pack_schema(self.hass, entry, selected), suggested),
+            data_schema=self.add_suggested_values_to_schema(schema, suggested),
             errors=errors,
             description_placeholders={
                 "medication": f"{self._name} {strength}".strip(),
