@@ -1,0 +1,184 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Pillbox",
+        "description": "Pillbox einrichten. Danach Personen (optional) und Medikamente hinzufügen."
+      }
+    },
+    "abort": {
+      "already_configured": "Pillbox ist bereits eingerichtet."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Einnahme-Zeiten",
+        "description": "Die Einnahmen aller Medikamente nutzen diese Zeiten. Reihenfolge = Tagesablauf. Feld leeren, um eine Zeit zu entfernen.",
+        "data": {
+          "slot_1": "Zeit 1",
+          "slot_2": "Zeit 2",
+          "slot_3": "Zeit 3",
+          "slot_4": "Zeit 4",
+          "slot_5": "Zeit 5",
+          "slot_6": "Zeit 6"
+        }
+      }
+    },
+    "error": {
+      "no_slots": "Mindestens eine Einnahme-Zeit ist nötig.",
+      "duplicate_slots": "Jede Einnahme-Zeit darf nur einmal vorkommen.",
+      "slot_in_use": "Diese Einnahme-Zeit wird noch von einem Medikament genutzt."
+    }
+  },
+  "config_subentries": {
+    "medication": {
+      "entry_type": "Medikament",
+      "initiate_flow": {
+        "user": "Medikament hinzufügen"
+      },
+      "step": {
+        "user": {
+          "title": "Medikament hinzufügen",
+          "data": {
+            "name": "Name",
+            "strength": "Wirkstärke",
+            "stock": "Vorrat (Stück)",
+            "intakes": "Einnahmen",
+            "tag_id": "NFC-Tag"
+          },
+          "data_description": {
+            "strength": "Optional, z. B. „10 mg“. Jede Wirkstärke ist eine eigene Packung mit eigenem Vorrat.",
+            "stock": "Eine Änderung überschreibt den aktuellen Vorrat.",
+            "intakes": "Wer nimmt wann. Einnahme-Zeiten stehen in den Pillbox-Optionen, Personen über „Person hinzufügen“.",
+            "tag_id": "Optional, Tag an der Packung: Ein Scan erfasst die nächste offene Einnahme dieses Medikaments."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Dosierung und Warnung",
+              "data": {
+                "tablets_per_intake": "Tabletten pro Einnahme",
+                "low_threshold": "Warnschwelle Vorrat"
+              },
+              "data_description": {
+                "low_threshold": "Warnung, wenn der Vorrat unter diese Stückzahl fällt."
+              }
+            }
+          }
+        },
+        "reconfigure": {
+          "title": "Medikament bearbeiten",
+          "data": {
+            "name": "Name",
+            "strength": "Wirkstärke",
+            "stock": "Vorrat (Stück)",
+            "intakes": "Einnahmen",
+            "tag_id": "NFC-Tag"
+          },
+          "data_description": {
+            "strength": "Optional, z. B. „10 mg“. Jede Wirkstärke ist eine eigene Packung mit eigenem Vorrat.",
+            "stock": "Eine Änderung überschreibt den aktuellen Vorrat.",
+            "intakes": "Wer nimmt wann. Einnahme-Zeiten stehen in den Pillbox-Optionen, Personen über „Person hinzufügen“.",
+            "tag_id": "Optional, Tag an der Packung: Ein Scan erfasst die nächste offene Einnahme dieses Medikaments."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Dosierung und Warnung",
+              "data": {
+                "tablets_per_intake": "Tabletten pro Einnahme",
+                "low_threshold": "Warnschwelle Vorrat"
+              },
+              "data_description": {
+                "low_threshold": "Warnung, wenn der Vorrat unter diese Stückzahl fällt."
+              }
+            }
+          }
+        }
+      },
+      "error": {
+        "no_name": "Bitte einen Namen angeben.",
+        "tag_in_use": "Dieser Tag gehört schon einer anderen Person oder einem anderen Medikament.",
+        "no_intakes": "Mindestens eine Einnahme auswählen."
+      },
+      "abort": {
+        "reconfigure_successful": "Medikament gespeichert."
+      }
+    },
+    "person": {
+      "entry_type": "Person",
+      "initiate_flow": {
+        "user": "Person hinzufügen"
+      },
+      "step": {
+        "user": {
+          "title": "Person hinzufügen",
+          "data": {
+            "name": "Name",
+            "ha_person": "Person in Home Assistant",
+            "tag_id": "NFC-Tag"
+          },
+          "data_description": {
+            "ha_person": "Optional, Verknüpfung mit einer Person in Home Assistant.",
+            "tag_id": "Tag dieser Person: Ein Scan hakt alle ihre offenen Einnahmen zur nächsten Einnahme-Zeit ab, über alle Medikamente."
+          }
+        },
+        "reconfigure": {
+          "title": "Person bearbeiten",
+          "data": {
+            "name": "Name",
+            "ha_person": "Person in Home Assistant",
+            "tag_id": "NFC-Tag"
+          },
+          "data_description": {
+            "ha_person": "Optional, Verknüpfung mit einer Person in Home Assistant.",
+            "tag_id": "Tag dieser Person: Ein Scan hakt alle ihre offenen Einnahmen zur nächsten Einnahme-Zeit ab, über alle Medikamente."
+          }
+        }
+      },
+      "error": {
+        "no_name": "Bitte einen Namen angeben.",
+        "tag_in_use": "Dieser Tag gehört schon einer anderen Person oder einem anderen Medikament."
+      },
+      "abort": {
+        "reconfigure_successful": "Person gespeichert."
+      }
+    }
+  },
+  "entity": {
+    "number": {
+      "stock": {
+        "name": "Vorrat"
+      }
+    },
+    "sensor": {
+      "days_left": {
+        "name": "Reicht noch"
+      },
+      "runs_out_on": {
+        "name": "Reicht bis"
+      },
+      "taken_count": {
+        "name": "Einnahmen heute"
+      },
+      "open_intakes": {
+        "name": "Offene Einnahmen"
+      }
+    },
+    "binary_sensor": {
+      "low_stock": {
+        "name": "Vorrat niedrig"
+      },
+      "complete_today": {
+        "name": "Heute komplett"
+      }
+    },
+    "button": {
+      "take": {
+        "name": "Einnehmen"
+      },
+      "take_now": {
+        "name": "Jetzt einnehmen"
+      }
+    }
+  }
+}

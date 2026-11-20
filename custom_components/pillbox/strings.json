@@ -1,0 +1,184 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Pillbox",
+        "description": "Set up Pillbox. Afterwards add people (optional) and medications."
+      }
+    },
+    "abort": {
+      "already_configured": "Pillbox is already set up."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Times of day",
+        "description": "Intakes of all medications use these times. Order = order of the day. Leave a field empty to remove that time.",
+        "data": {
+          "slot_1": "Time 1",
+          "slot_2": "Time 2",
+          "slot_3": "Time 3",
+          "slot_4": "Time 4",
+          "slot_5": "Time 5",
+          "slot_6": "Time 6"
+        }
+      }
+    },
+    "error": {
+      "no_slots": "At least one time of day is required.",
+      "duplicate_slots": "Each time of day may appear only once.",
+      "slot_in_use": "This time of day is still used by a medication."
+    }
+  },
+  "config_subentries": {
+    "medication": {
+      "entry_type": "Medication",
+      "initiate_flow": {
+        "user": "Add medication"
+      },
+      "step": {
+        "user": {
+          "title": "Add medication",
+          "data": {
+            "name": "Name",
+            "strength": "Strength",
+            "stock": "Stock (tablets)",
+            "intakes": "Intakes",
+            "tag_id": "NFC tag"
+          },
+          "data_description": {
+            "strength": "Optional, e.g. \"10 mg\". Each strength is its own pack with its own stock.",
+            "stock": "Changing this value overwrites the current stock.",
+            "intakes": "Who takes it when. Times of day are set in the Pillbox options, people via \"Add person\".",
+            "tag_id": "Optional tag on the pack: a scan records the next open intake of this medication."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Dosage and warning",
+              "data": {
+                "tablets_per_intake": "Tablets per intake",
+                "low_threshold": "Low stock threshold"
+              },
+              "data_description": {
+                "low_threshold": "Warn when stock falls below this number of tablets."
+              }
+            }
+          }
+        },
+        "reconfigure": {
+          "title": "Edit medication",
+          "data": {
+            "name": "Name",
+            "strength": "Strength",
+            "stock": "Stock (tablets)",
+            "intakes": "Intakes",
+            "tag_id": "NFC tag"
+          },
+          "data_description": {
+            "strength": "Optional, e.g. \"10 mg\". Each strength is its own pack with its own stock.",
+            "stock": "Changing this value overwrites the current stock.",
+            "intakes": "Who takes it when. Times of day are set in the Pillbox options, people via \"Add person\".",
+            "tag_id": "Optional tag on the pack: a scan records the next open intake of this medication."
+          },
+          "sections": {
+            "advanced": {
+              "name": "Dosage and warning",
+              "data": {
+                "tablets_per_intake": "Tablets per intake",
+                "low_threshold": "Low stock threshold"
+              },
+              "data_description": {
+                "low_threshold": "Warn when stock falls below this number of tablets."
+              }
+            }
+          }
+        }
+      },
+      "error": {
+        "no_name": "Please enter a name.",
+        "tag_in_use": "This tag is already used by another person or medication.",
+        "no_intakes": "Select at least one intake."
+      },
+      "abort": {
+        "reconfigure_successful": "Medication saved."
+      }
+    },
+    "person": {
+      "entry_type": "Person",
+      "initiate_flow": {
+        "user": "Add person"
+      },
+      "step": {
+        "user": {
+          "title": "Add person",
+          "data": {
+            "name": "Name",
+            "ha_person": "Home Assistant person",
+            "tag_id": "NFC tag"
+          },
+          "data_description": {
+            "ha_person": "Optional link to a person in Home Assistant.",
+            "tag_id": "Tag of this person: a scan records all of their open intakes at the next time of day, across all medications."
+          }
+        },
+        "reconfigure": {
+          "title": "Edit person",
+          "data": {
+            "name": "Name",
+            "ha_person": "Home Assistant person",
+            "tag_id": "NFC tag"
+          },
+          "data_description": {
+            "ha_person": "Optional link to a person in Home Assistant.",
+            "tag_id": "Tag of this person: a scan records all of their open intakes at the next time of day, across all medications."
+          }
+        }
+      },
+      "error": {
+        "no_name": "Please enter a name.",
+        "tag_in_use": "This tag is already used by another person or medication."
+      },
+      "abort": {
+        "reconfigure_successful": "Person saved."
+      }
+    }
+  },
+  "entity": {
+    "number": {
+      "stock": {
+        "name": "Stock"
+      }
+    },
+    "sensor": {
+      "days_left": {
+        "name": "Days left"
+      },
+      "runs_out_on": {
+        "name": "Runs out on"
+      },
+      "taken_count": {
+        "name": "Intakes today"
+      },
+      "open_intakes": {
+        "name": "Open intakes"
+      }
+    },
+    "binary_sensor": {
+      "low_stock": {
+        "name": "Low stock"
+      },
+      "complete_today": {
+        "name": "Complete today"
+      }
+    },
+    "button": {
+      "take": {
+        "name": "Take"
+      },
+      "take_now": {
+        "name": "Take now"
+      }
+    }
+  }
+}
