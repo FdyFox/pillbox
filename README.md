@@ -5,7 +5,7 @@
 > [!NOTE]
 > This integration was developed with the help of AI (Claude by Anthropic): code, tests and documentation were written with AI assistance and are reviewed by me and used in my own Home Assistant. Pillbox is a memory aid, not a medical device.
 
-Home Assistant integration (HACS) that tracks medication intakes and stock.
+Home Assistant integration (Marketplace / HACS) that tracks medication intakes and stock.
 One NFC tag scan is enough: check off the intake, count down the stock, calculate how long it lasts. Reminders come via a blueprint.
 
 > Status: **v0.1.0**. Runs in my own Home Assistant; tests run against HA 2025.7 to 2026.2.
@@ -36,7 +36,8 @@ If you need fixed intake times (e.g. exactly every 12 hours), with snooze, skip,
 
 ## Installation
 
-- **HACS:** HACS → Custom repositories → `https://github.com/FdyFox/pillbox`, type "Integration". Then install "Pillbox" and restart Home Assistant.
+- **Marketplace (Home Assistant 2026.11+):** Settings → Marketplace → "Add from link" → `FdyFox/pillbox`. Then open "Pillbox" in the list, install it and restart Home Assistant if asked.
+- **HACS (before 2026.11):** HACS → Custom repositories → `https://github.com/FdyFox/pillbox`, type "Integration". Then install "Pillbox" and restart Home Assistant.
 - **Manual:** copy `custom_components/pillbox/` to `/config/custom_components/pillbox/` and restart Home Assistant.
 
 Then: Settings → Devices & services → Add integration → "Pillbox".
@@ -206,7 +207,7 @@ scripts/deploy_hass.sh -r          # copy and restart HA
 
 Layout: `custom_components/pillbox/` (`logic.py` pure logic, `__init__.py` manager, setup and migration of older entries, `services.py`, `entity.py` common base, one file per platform, `config_flow.py`, `frontend/pillbox-card.js`, `translations/` de/en, `brand/` icon), `blueprints/`, `assets/` (logo sources), `scripts/`, `tests/`.
 
-GitHub Actions run the tests, Home Assistant's `hassfest` and the HACS validation on every push.
+GitHub Actions run the tests, Home Assistant's `hassfest` and the repository validation (`hacs/action`, also used by the Marketplace) on every push.
 
 Notes for contributors (including AI agents) are in [AGENTS.md](AGENTS.md).
 

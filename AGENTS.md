@@ -4,7 +4,7 @@ Notes for AI agents (and humans) working on Pillbox.
 
 ## Project
 
-Home Assistant integration (HACS) for medication stock and intakes. The domain model, entities and usage are described in the [README](README.md).
+Home Assistant integration (Marketplace / HACS) for medication stock and intakes. The domain model, entities and usage are described in the [README](README.md).
 
 - `custom_components/pillbox/logic.py`: pure logic without HA dependencies (stock, coverage, intakes).
 - `custom_components/pillbox/__init__.py`: `PillboxManager` (load, save, tag scans, day change) and `_async_migrate` (migration of older entries).
@@ -14,7 +14,7 @@ Home Assistant integration (HACS) for medication stock and intakes. The domain m
 - `custom_components/pillbox/frontend/pillbox-card.js`: dashboard card, plain JavaScript without a build step, served and registered by `__init__.py`. Bump `version` in `manifest.json` when it changes, so browsers load the new file.
 - `blueprints/automation/pillbox/intake_reminder.yaml`: reminder blueprint.
 - `tests/`: logic, integration, service, card (rendered with QuickJS) and blueprint tests against a real HA.
-- `.github/workflows/validate.yml`: tests, `hassfest` and HACS validation on every push.
+- `.github/workflows/validate.yml`: tests, `hassfest` and repository validation (`hacs/action`, used by the Marketplace as well) on every push.
 
 ## Rules
 
