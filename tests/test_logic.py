@@ -105,3 +105,84 @@ def test_stored_status_adapts_to_changed_intakes():
     assert m.taken == [True, False, False]
     m = Medication("X", stock=5, intakes=["Morgens"], taken=[True, True])
     assert m.taken == [True]
+
+
+# --- Doses per intake and "as needed" ----------------------------------------
+
+
+def test_half_tablets():
+    m = Medication("Magnesium", stock=10, tablets_per_intake=0.5)
+    assert m.daily_consumption == 0.5
+    assert m.days_left(TODAY) == 20
+    assert m.take() is True
+    assert m.stock == 9.5
+    assert m.last_covered_day(TODAY) == date(2026, 12, 7)  # 9.5 / 0.5 = 19 more days
+    assert m.days_left(TODAY) == 19
+    m.set_intake(0, False)
+    assert m.stock == 10 and isinstance(m.stock, int)
+
+
+def test_own_dose_per_intake():
+    m = Medication("Magnesium", stock=10, intakes=["Morning · Anna", "Morning · Ben"], doses=[0.25, 1])
+    assert m.daily_consumption == 1.25
+    assert m.days_left(TODAY) == 8
+    m.set_intake(0, True)
+    assert m.stock == 9.75
+    m.take()
+    assert m.stock == 8.75
+    assert m.days_left(TODAY) == 7  # 8.75 / 1.25 = 7
+
+
+def test_no_float_noise():
+    m = Medication("X", stock=0.9, doses=[0.3])
+    assert m.days_left(TODAY) == 3
+    for _ in range(3):
+        m.take()
+        m.reset_day()
+    assert m.stock == 0
+
+
+def test_as_needed_is_never_open():
+    m = Medication("Magnesium", stock=10, intakes=["Morning", "Evening"], as_needed=[False, True])
+    assert m.intakes_per_day == 1
+    assert m.daily_consumption == 1
+    assert m.open_intakes == ["Morning"]
+    assert m.take() is True
+    assert m.complete_today is True
+    assert m.take() is False  # the "as needed" intake is not taken by the pack's tag
+    assert m.days_left(TODAY) == 9
+    # ... but can be checked off by hand and then counts down the stock.
+    assert m.set_intake(1, True) is True
+    assert m.stock == 8
+    assert m.taken_today == 2
+    assert m.days_left(TODAY) == 8
+
+
+def test_only_as_needed():
+    m = Medication("Vitamin D", stock=10, as_needed=[True])
+    assert m.daily_consumption == 0
+    assert m.complete_today is True
+    assert m.days_left(TODAY) is None
+    assert m.last_covered_day(TODAY) is None
+    assert m.take() is True  # tag on such a pack: record it
+    assert m.stock == 9
+    assert m.take() is False
+
+
+def test_take_other_amount_today():
+    m = Medication("Magnesium", stock=10)
+    assert m.set_intake(0, True, 0.75) is True
+    assert m.stock == 9.25 and m.amounts == [0.75]
+    assert m.set_intake(0, True) is False  # already taken, amount kept
+    assert m.set_intake(0, True, 0.5) is True  # correct the amount
+    assert m.stock == 9.5
+    assert m.set_intake(0, False) is True  # undo returns exactly what was taken
+    assert m.stock == 10 and m.amounts == [0]
+    assert m.days_left(TODAY) == 10  # coverage still uses the dose
+
+
+def test_stored_taken_without_amount_uses_dose():
+    m = Medication("X", stock=5, doses=[0.5], taken=[True])
+    assert m.amounts == [0.5]
+    m.reset_day()
+    assert m.amounts == [0]

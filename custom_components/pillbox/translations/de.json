@@ -46,12 +46,14 @@
             "strengths": "Wirkstärken",
             "stock": "Vorrat (Stück)",
             "intakes": "Einnahmen",
+            "as_needed": "Bei Bedarf",
             "tag_id": "NFC-Tag"
           },
           "data_description": {
             "strengths": "Eine Packung je Wirkstärke, z. B. „10 mg“, „20 mg“. Jede Packung hat ihren eigenen Vorrat. Leer lassen für nur eine Packung.",
-            "stock": "Eine Änderung überschreibt den aktuellen Vorrat.",
-            "intakes": "Wer nimmt wann. Einnahme-Zeiten stehen in den Pillbox-Optionen, Personen über „Personen hinzufügen“.",
+            "stock": "Eine Änderung überschreibt den aktuellen Vorrat. Halbe und Viertel sind erlaubt, z. B. 24,5.",
+            "intakes": "Regelmäßige Einnahmen: Wer nimmt wann. Einnahme-Zeiten stehen in den Pillbox-Optionen, Personen über „Personen hinzufügen“.",
+            "as_needed": "Einnahmen, die nur bei Bedarf genommen werden, z. B. „Nachts · Anna“. Sie lassen sich wie gewohnt abhaken, sind aber nie offen und zählen nicht zur Reichweite.",
             "tag_id": "Optional, Tag an der Packung: Ein Scan erfasst die nächste offene Einnahme dieses Medikaments."
           },
           "sections": {
@@ -59,9 +61,12 @@
               "name": "Dosierung und Warnung",
               "data": {
                 "tablets_per_intake": "Tabletten pro Einnahme",
+                "individual_doses": "Dosis je Einnahme",
                 "low_threshold": "Warnschwelle Vorrat"
               },
               "data_description": {
+                "tablets_per_intake": "Standard-Dosis, auch ½ (0,5) oder ¼ (0,25).",
+                "individual_doses": "Danach eine Seite mit einer Dosis pro Einnahme, z. B. Anna ½ und Ben 1.",
                 "low_threshold": "Warnung, wenn der Vorrat unter diese Stückzahl fällt."
               }
             }
@@ -75,12 +80,14 @@
             "strengths": "Wirkstärken",
             "stock": "Vorrat (Stück)",
             "intakes": "Einnahmen",
+            "as_needed": "Bei Bedarf",
             "tag_id": "NFC-Tag"
           },
           "data_description": {
             "strengths": "Eine Packung je Wirkstärke, z. B. „10 mg“, „20 mg“. Jede Packung hat ihren eigenen Vorrat. Leer lassen für nur eine Packung.",
-            "stock": "Eine Änderung überschreibt den aktuellen Vorrat.",
-            "intakes": "Wer nimmt wann. Einnahme-Zeiten stehen in den Pillbox-Optionen, Personen über „Personen hinzufügen“.",
+            "stock": "Eine Änderung überschreibt den aktuellen Vorrat. Halbe und Viertel sind erlaubt, z. B. 24,5.",
+            "intakes": "Regelmäßige Einnahmen: Wer nimmt wann. Einnahme-Zeiten stehen in den Pillbox-Optionen, Personen über „Personen hinzufügen“.",
+            "as_needed": "Einnahmen, die nur bei Bedarf genommen werden, z. B. „Nachts · Anna“. Sie lassen sich wie gewohnt abhaken, sind aber nie offen und zählen nicht zur Reichweite.",
             "tag_id": "Optional, Tag an der Packung: Ein Scan erfasst die nächste offene Einnahme dieses Medikaments."
           },
           "sections": {
@@ -88,9 +95,12 @@
               "name": "Dosierung und Warnung",
               "data": {
                 "tablets_per_intake": "Tabletten pro Einnahme",
+                "individual_doses": "Dosis je Einnahme",
                 "low_threshold": "Warnschwelle Vorrat"
               },
               "data_description": {
+                "tablets_per_intake": "Standard-Dosis, auch ½ (0,5) oder ¼ (0,25).",
+                "individual_doses": "Danach eine Seite mit einer Dosis pro Einnahme, z. B. Anna ½ und Ben 1.",
                 "low_threshold": "Warnung, wenn der Vorrat unter diese Stückzahl fällt."
               }
             }
@@ -102,11 +112,13 @@
           "data": {
             "stock": "Vorrat (Stück)",
             "intakes": "Einnahmen",
+            "as_needed": "Bei Bedarf",
             "tag_id": "NFC-Tag"
           },
           "data_description": {
-            "stock": "Eine Änderung überschreibt den aktuellen Vorrat.",
-            "intakes": "Wer nimmt wann. Einnahme-Zeiten stehen in den Pillbox-Optionen, Personen über „Personen hinzufügen“.",
+            "stock": "Eine Änderung überschreibt den aktuellen Vorrat. Halbe und Viertel sind erlaubt, z. B. 24,5.",
+            "intakes": "Regelmäßige Einnahmen: Wer nimmt wann. Einnahme-Zeiten stehen in den Pillbox-Optionen, Personen über „Personen hinzufügen“.",
+            "as_needed": "Einnahmen, die nur bei Bedarf genommen werden, z. B. „Nachts · Anna“. Sie lassen sich wie gewohnt abhaken, sind aber nie offen und zählen nicht zur Reichweite.",
             "tag_id": "Optional, Tag an der Packung: Ein Scan erfasst die nächste offene Einnahme dieses Medikaments."
           },
           "sections": {
@@ -114,19 +126,26 @@
               "name": "Dosierung und Warnung",
               "data": {
                 "tablets_per_intake": "Tabletten pro Einnahme",
+                "individual_doses": "Dosis je Einnahme",
                 "low_threshold": "Warnschwelle Vorrat"
               },
               "data_description": {
+                "tablets_per_intake": "Standard-Dosis, auch ½ (0,5) oder ¼ (0,25).",
+                "individual_doses": "Danach eine Seite mit einer Dosis pro Einnahme, z. B. Anna ½ und Ben 1.",
                 "low_threshold": "Warnung, wenn der Vorrat unter diese Stückzahl fällt."
               }
             }
           }
+        },
+        "doses": {
+          "title": "{medication}: Dosis",
+          "description": "Tabletten pro Einnahme, z. B. 0,5 für eine halbe Tablette. Standard: {default}."
         }
       },
       "error": {
         "no_name": "Bitte einen Namen angeben.",
         "tag_in_use": "Dieser Tag gehört schon einer anderen Person oder einem anderen Medikament.",
-        "no_intakes": "Mindestens eine Einnahme auswählen.",
+        "no_intakes": "Mindestens eine Einnahme auswählen (regelmäßig oder bei Bedarf).",
         "duplicate_strengths": "Jede Wirkstärke darf nur einmal vorkommen."
       },
       "abort": {
@@ -246,6 +265,16 @@
         "stock": {
           "name": "Vorrat",
           "description": "Vorrat auf diese Stückzahl setzen."
+        }
+      }
+    },
+    "take_intake": {
+      "name": "Einnahme erfassen",
+      "description": "Hakt eine Einnahme ab, optional mit einer anderen Menge als ihrer Dosis (nur heute, z. B. 0,75 statt 1). Bei einer schon erfassten Einnahme wird die Menge korrigiert.",
+      "fields": {
+        "amount": {
+          "name": "Menge",
+          "description": "Genommene Tabletten. Leer = Dosis der Einnahme."
         }
       }
     }

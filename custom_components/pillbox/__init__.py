@@ -8,6 +8,7 @@ Core logic: logic.py (tested). Here: wiring with Home Assistant.
 """
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Callable
 from pathlib import Path
@@ -27,6 +28,8 @@ from homeassistant.loader import async_get_integration
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    CONF_AS_NEEDED,
+    CONF_DOSES,
     CONF_HA_PERSON,
     CONF_INTAKES,
     CONF_LOW_THRESHOLD,
@@ -53,11 +56,12 @@ from .const import (
     default_slots,
     legacy_intake_names,
     make_key,
+    ordered_slots,
     parse_key,
     persons_title,
     signal,
 )
-from .logic import Medication
+from .logic import Medication, tidy
 from .services import async_setup_services
 
 _LOGGER = logging.getLogger(__name__)
@@ -73,6 +77,7 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 CARD_URL = f"/{DOMAIN}/pillbox-card.js"
 CARD_PATH = Path(__file__).parent / "frontend" / "pillbox-card.js"
+BLUEPRINTS_DIR = Path(__file__).parent / "blueprints"
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -80,6 +85,45 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     async_setup_services(hass)
     await _async_register_card(hass)
     return True
+
+
+BLUEPRINT_SLOTS_MARKER = "options: []  # pillbox:slots"
+
+
+async def _async_install_blueprints(hass: HomeAssistant, slots: list[str] | None = None) -> None:
+    """Copy the reminder blueprints to /config/blueprints/automation/pillbox/ (new or updated versions).
+
+    HACS and the Marketplace only install custom_components/, so the integration brings them along.
+    The times of day are filled in as dropdown options (a blueprint cannot read them itself).
+    """
+    dest_dir = Path(hass.config.path("blueprints", "automation", DOMAIN))
+    options = "options: " + json.dumps(list(slots or []), ensure_ascii=False)
+
+    def render(source: Path) -> bytes:
+        lines = source.read_text(encoding="utf-8").splitlines(keepends=True)
+        for i, line in enumerate(lines):
+            if BLUEPRINT_SLOTS_MARKER in line:
+                indent = line[: len(line) - len(line.lstrip())]
+                lines[i] = f"{indent}{options}\n"
+        return "".join(lines).encode("utf-8")
+
+    def install() -> list[str]:
+        installed = []
+        for source in sorted(BLUEPRINTS_DIR.glob("*.yaml")):
+            dest = dest_dir / source.name
+            content = render(source)
+            if dest.is_file() and dest.read_bytes() == content:
+                continue
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(content)
+            installed.append(source.name)
+        return installed
+
+    try:
+        if installed := await hass.async_add_executor_job(install):
+            _LOGGER.info("Installed blueprints %s in %s", ", ".join(installed), dest_dir)
+    except OSError as err:
+        _LOGGER.warning("Could not install the reminder blueprints in %s: %s", dest_dir, err)
 
 
 async def _async_register_card(hass: HomeAssistant) -> None:
@@ -138,7 +182,7 @@ class PillboxManager:
         self.meds: dict[str, Medication] = {}
         self.info: dict[str, MedInfo] = {}
         self.tags: dict[str, tuple[str, str]] = {}  # tag_id -> ("medication"|"person", pack/person id)
-        self._config_stock: dict[str, int] = {}  # stock from the configuration last applied
+        self._config_stock: dict[str, float] = {}  # stock from the configuration last applied
         self.day: date = logical_today()
 
     # --- Load / save -------------------------------------------------------
@@ -179,10 +223,10 @@ class PillboxManager:
 
     def _load_pack(self, sub_id: str, name: str, d: dict[str, Any], state: dict[str, Any]) -> None:
         pack_id = d[CONF_PACK_ID]
-        config_stock = int(d.get(CONF_STOCK, 0))
+        config_stock = tidy(d.get(CONF_STOCK, 0))
         # Stock changed in the configuration (edit) -> apply it, otherwise keep the stored value.
         if "stock" in state and state.get("config_stock") == config_stock:
-            stock = int(state["stock"])
+            stock = tidy(state["stock"])
         else:
             stock = config_stock
 
@@ -197,13 +241,19 @@ class PillboxManager:
             saved_taken = dict(zip(data_keys, saved_taken))
         keys = sorted(data_keys, key=self._slot_order)
 
+        default_dose = tidy(d.get(CONF_TABLETS_PER_INTAKE, 1))
+        doses = d.get(CONF_DOSES) or {}
+        as_needed = set(d.get(CONF_AS_NEEDED) or [])
         self.meds[pack_id] = Medication(
             name=name,
             stock=stock,
             intakes=keys,
-            tablets_per_intake=int(d.get(CONF_TABLETS_PER_INTAKE, 1)),
-            low_threshold=int(d.get(CONF_LOW_THRESHOLD, DEFAULT_LOW_THRESHOLD)),
+            tablets_per_intake=default_dose,
+            low_threshold=tidy(d.get(CONF_LOW_THRESHOLD, DEFAULT_LOW_THRESHOLD)),
             taken=[bool(saved_taken.get(k, False)) for k in keys],
+            amounts=[tidy(state.get("amounts", {}).get(k, 0)) for k in keys],
+            doses=[tidy(doses.get(k, default_dose)) for k in keys],
+            as_needed=[k in as_needed for k in keys],
         )
         self.info[pack_id] = MedInfo(
             name=name, sub_id=sub_id, strength=d.get(CONF_STRENGTH) or None, tag_id=d.get(CONF_TAG_ID), config=dict(d)
@@ -220,6 +270,7 @@ class PillboxManager:
                     k: {
                         "stock": m.stock,
                         "taken": dict(zip(m.intakes, m.taken)),
+                        "amounts": {k: a for k, a, t in zip(m.intakes, m.amounts, m.taken) if t},
                         "config_stock": self._config_stock[k],
                     }
                     for k, m in self.meds.items()
@@ -241,6 +292,14 @@ class PillboxManager:
         person = self.person_of(key)
         return f"{person.name} {self.slot_name(key)}" if person else self.slot_name(key)
 
+    def is_as_needed(self, pack_id: str, key: str) -> bool:
+        med = self.meds[pack_id]
+        return med.as_needed[med.intakes.index(key)]
+
+    def dose(self, pack_id: str, key: str) -> float:
+        med = self.meds[pack_id]
+        return med.doses[med.intakes.index(key)]
+
     def person_intakes(self, person_id: str) -> list[tuple[str, str, bool]]:
         """All intakes of a person: (pack id, key, taken), in order of the day."""
         result = [
@@ -252,8 +311,15 @@ class PillboxManager:
         return sorted(result, key=lambda r: self._slot_order(r[1]))
 
     def next_slot_for(self, person_id: str) -> str | None:
-        """Earliest time of day at which the person still has something open today."""
-        return next((parse_key(k)[0] for _, k, taken in self.person_intakes(person_id) if not taken), None)
+        """Earliest time of day at which the person still has something open today ("as needed" never is)."""
+        return next(
+            (
+                parse_key(k)[0]
+                for sub_id, k, taken in self.person_intakes(person_id)
+                if not taken and not self.is_as_needed(sub_id, k)
+            ),
+            None,
+        )
 
     # --- Changes -----------------------------------------------------------
 
@@ -304,17 +370,26 @@ class PillboxManager:
         if slot is None:
             return await self._async_change({}, rolled)
         key = make_key(slot, person_id)
-        targets = {sub_id: k for sub_id, k, taken in self.person_intakes(person_id) if k == key and not taken}
+        targets = {
+            sub_id: k
+            for sub_id, k, taken in self.person_intakes(person_id)
+            if k == key and not taken and not self.is_as_needed(sub_id, k)
+        }
         return await self._async_change(
             {sub_id: (lambda m, k=k: m.set_intake(m.intakes.index(k), True)) for sub_id, k in targets.items()},
             rolled,
         )
 
-    async def async_set_intake(self, sub_id: str, key: str, taken: bool) -> bool:
-        """Check off a specific intake (stock down) or undo it (stock up)."""
-        return await self._async_change({sub_id: lambda m: m.set_intake(m.intakes.index(key), taken)})
+    def amount(self, pack_id: str, key: str) -> float:
+        """Tablets taken today for this intake (0 = not taken)."""
+        med = self.meds[pack_id]
+        return med.amounts[med.intakes.index(key)]
 
-    async def async_refill(self, sub_id: str, stock: int) -> None:
+    async def async_set_intake(self, sub_id: str, key: str, taken: bool, amount: float | None = None) -> bool:
+        """Check off a specific intake (stock down) or undo it (stock up)."""
+        return await self._async_change({sub_id: lambda m: m.set_intake(m.intakes.index(key), taken, amount)})
+
+    async def async_refill(self, sub_id: str, stock: float) -> None:
         """Set the stock (number entity, refill service, card buttons); fires low_stock when crossing the threshold."""
 
         def change(med: Medication) -> bool:
@@ -361,6 +436,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: PillboxConfigEntry) -> b
     _async_migrate(hass, entry)
     manager = PillboxManager(hass, entry)
     await manager.async_load()
+    # Blueprints with the current times of day as dropdown options (again after every change).
+    await _async_install_blueprints(hass, [name for _, name in ordered_slots(manager.slots)])
     entry.runtime_data = manager
 
     entry.async_on_unload(hass.bus.async_listen(EVENT_TAG_SCANNED, manager.async_handle_tag))

@@ -1,8 +1,6 @@
 """Run the reminder blueprint as a real automation in HA."""
 import asyncio
-import shutil
 from datetime import datetime
-from pathlib import Path
 
 from homeassistant.config_entries import ConfigSubentryData
 from homeassistant.setup import async_setup_component
@@ -15,7 +13,6 @@ from pytest_homeassistant_custom_component.common import (
 
 from custom_components.pillbox.const import DOMAIN
 
-BLUEPRINT = Path(__file__).parent.parent / "blueprints/automation/pillbox/intake_reminder.yaml"
 SWITCH = "switch.magnesium_morgens"
 
 
@@ -23,11 +20,8 @@ def _at(s: str) -> datetime:
     return datetime.fromisoformat(s).replace(tzinfo=dt_util.get_default_time_zone())
 
 
-async def _setup(hass, tmp_path, freezer, start: str, repeat: int = 60, last: str = "22:00:00"):
-    hass.config.config_dir = str(tmp_path)
-    dest = tmp_path / "blueprints/automation/pillbox/intake_reminder.yaml"
-    dest.parent.mkdir(parents=True)
-    shutil.copy(BLUEPRINT, dest)
+async def _setup(hass, tmp_path, freezer, start: str, repeat: int = 60, last: str = "22:00:00", **extra):
+    hass.config.config_dir = str(tmp_path)  # the integration installs the blueprint there
 
     freezer.move_to(_at(start))
     entry = MockConfigEntry(
@@ -46,6 +40,7 @@ async def _setup(hass, tmp_path, freezer, start: str, repeat: int = 60, last: st
     )
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
+    assert (tmp_path / "blueprints/automation/pillbox/intake_reminder.yaml").is_file()
     calls = async_mock_service(hass, "notify", "mobile_app_test")
     assert await async_setup_component(
         hass,
@@ -61,6 +56,7 @@ async def _setup(hass, tmp_path, freezer, start: str, repeat: int = 60, last: st
                         "time_weekend": "10:00:00",
                         "repeat_minutes": repeat,
                         "last_reminder": last,
+                        **extra,
                     },
                 }
             }
@@ -123,3 +119,68 @@ async def test_stops_after_last_reminder(hass, tmp_path, freezer):
     assert len(calls) == 1
     await _tick(hass, freezer, "2026-11-18 09:00:01")
     assert len(calls) == 1  # next reminder would be after 08:30
+
+
+async def test_blueprint_is_updated_but_not_rewritten(hass, tmp_path):
+    from custom_components.pillbox import _async_install_blueprints
+
+    hass.config.config_dir = str(tmp_path)
+    dest = tmp_path / "blueprints/automation/pillbox/intake_reminder.yaml"
+    dest.parent.mkdir(parents=True)
+    dest.write_text("old version")
+    await _async_install_blueprints(hass, ["Morgens"])
+    assert dest.read_text() != "old version"
+    assert (dest.parent / "person_reminder.yaml").is_file()
+    mtime = dest.stat().st_mtime_ns
+    await _async_install_blueprints(hass, ["Morgens"])  # unchanged -> not written again
+    assert dest.stat().st_mtime_ns == mtime
+
+
+async def test_intake_reminder_alarm_mode(hass, tmp_path, freezer):
+    calls = await _setup(hass, tmp_path, freezer, "2026-11-18 07:59:00", alarm=True)
+    await _tick(hass, freezer, "2026-11-18 08:00:00")
+    data = calls[0].data["data"]
+    assert data["channel"] == "alarm_stream" and data["push"]["sound"]["critical"] == 1
+    assert data["actions"][0]["action"] == f"PILLBOX_{SWITCH}"
+
+
+async def test_intake_reminder_phones_dropdown(hass, tmp_path, freezer):
+    from .test_person_reminder import _phone
+
+    phone = _phone(hass, "Anna Phone")
+    phone_calls = async_mock_service(hass, "notify", "mobile_app_anna_phone")
+    calls = await _setup(hass, tmp_path, freezer, "2026-11-18 07:59:00", notify_devices=[phone])
+    await _tick(hass, freezer, "2026-11-18 08:00:00")
+    assert len(calls) == 1 and len(phone_calls) == 1  # text field and phone both get it
+    assert phone_calls[0].data["data"]["actions"][0]["action"] == f"PILLBOX_{SWITCH}"
+
+
+async def test_snooze_and_dismiss(hass, tmp_path, freezer):
+    calls = await _setup(hass, tmp_path, freezer, "2026-11-18 07:59:00", repeat=0)
+    await _tick(hass, freezer, "2026-11-18 08:00:00")
+    assert [a["title"] for a in calls[0].data["data"]["actions"]] == ["Taken", "Skip", "Later"]
+    assert calls[0].data["data"]["actions"][2]["action"] == f"PILLBOX_{SWITCH}_SNOOZE"
+
+    # "Later": reminded again after 15 minutes, although repetition is off.
+    hass.bus.async_fire("mobile_app_notification_action", {"action": f"PILLBOX_{SWITCH}_SNOOZE"})
+    await _settle(hass)
+    await _tick(hass, freezer, "2026-11-18 08:10:00")
+    assert len(calls) == 1
+    await _tick(hass, freezer, "2026-11-18 08:15:01")
+    assert len(calls) == 2
+
+    # "Skip": removed from the phone, no more reminders today; the intake stays open.
+    hass.bus.async_fire("mobile_app_notification_action", {"action": f"PILLBOX_{SWITCH}_DISMISS"})
+    await _settle(hass)
+    assert calls[-1].data["message"] == "clear_notification"
+    n = len(calls)
+    await _tick(hass, freezer, "2026-11-18 09:00:00")
+    await _tick(hass, freezer, "2026-11-18 12:00:00")
+    assert len(calls) == n
+    assert hass.states.get(SWITCH).state == "off"
+
+
+async def test_without_extra_buttons(hass, tmp_path, freezer):
+    calls = await _setup(hass, tmp_path, freezer, "2026-11-18 07:59:00", snooze_minutes=0, dismiss_title="")
+    await _tick(hass, freezer, "2026-11-18 08:00:00")
+    assert [a["title"] for a in calls[0].data["data"]["actions"]] == ["Taken"]

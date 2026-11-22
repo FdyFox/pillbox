@@ -25,7 +25,10 @@ from homeassistant.data_entry_flow import section
 from homeassistant.helpers import entity_registry as er, selector
 
 from .const import (
+    CONF_AS_NEEDED,
+    CONF_DOSES,
     CONF_HA_PERSON,
+    CONF_INDIVIDUAL_DOSES,
     CONF_INTAKES,
     CONF_LOW_THRESHOLD,
     CONF_PACK_ID,
@@ -49,13 +52,15 @@ from .const import (
     parse_key,
     persons_title,
 )
+from .logic import tidy
 
-_NUM = lambda lo, hi: selector.NumberSelector(  # noqa: E731
-    selector.NumberSelectorConfig(min=lo, max=hi, step=1, mode=selector.NumberSelectorMode.BOX)
+_NUM = lambda lo, hi, step=1: selector.NumberSelector(  # noqa: E731
+    selector.NumberSelectorConfig(min=lo, max=hi, step=step, mode=selector.NumberSelectorMode.BOX)
 )
+_DOSE = _NUM(0.25, 10, 0.25)  # tablets per intake: quarters, halves, ...
 
 _ADVANCED_FIELDS = (CONF_TABLETS_PER_INTAKE, CONF_LOW_THRESHOLD)
-_INT_FIELDS = (CONF_STOCK, CONF_TABLETS_PER_INTAKE, CONF_LOW_THRESHOLD)
+_NUMBER_FIELDS = (CONF_STOCK, CONF_TABLETS_PER_INTAKE, CONF_LOW_THRESHOLD)
 
 
 # --- Helpers ----------------------------------------------------------------
@@ -351,21 +356,24 @@ def _pack_fields(hass: HomeAssistant, entry: ConfigEntry, selected: list[str] | 
     persons = _persons(entry)
     # Without people: preselect the first time of day; with people, let the user choose.
     default = [] if persons else [make_key(ordered_slots(slots)[0][0], None)]
+    intakes = lambda: selector.SelectSelector(  # noqa: E731
+        selector.SelectSelectorConfig(
+            options=_intake_options(slots, persons, selected),
+            multiple=True,
+            sort=False,
+            mode=selector.SelectSelectorMode.DROPDOWN,  # chips instead of a long checkbox list
+        )
+    )
     return {
-        vol.Required(CONF_STOCK): _NUM(0, 1000),
-        vol.Required(CONF_INTAKES, default=default): selector.SelectSelector(
-            selector.SelectSelectorConfig(
-                options=_intake_options(slots, persons, selected),
-                multiple=True,
-                sort=False,
-                mode=selector.SelectSelectorMode.DROPDOWN,  # chips instead of a long checkbox list
-            )
-        ),
+        vol.Required(CONF_STOCK): _NUM(0, 1000, 0.25),
+        vol.Required(CONF_INTAKES, default=default): intakes(),
+        vol.Optional(CONF_AS_NEEDED, default=[]): intakes(),
         vol.Optional(CONF_TAG_ID): _tag_selector(hass),
         vol.Required(SECTION_ADVANCED): section(
             vol.Schema(
                 {
-                    vol.Required(CONF_TABLETS_PER_INTAKE, default=1): _NUM(1, 10),
+                    vol.Required(CONF_TABLETS_PER_INTAKE, default=1): _DOSE,
+                    vol.Required(CONF_INDIVIDUAL_DOSES, default=False): selector.BooleanSelector(),
                     vol.Required(CONF_LOW_THRESHOLD, default=DEFAULT_LOW_THRESHOLD): _NUM(0, 1000),
                 }
             ),
@@ -376,21 +384,31 @@ def _pack_fields(hass: HomeAssistant, entry: ConfigEntry, selected: list[str] | 
 
 def _pack_suggested(pack: dict[str, Any]) -> dict[str, Any]:
     """Stored (flat) pack as form defaults, with the section nested."""
-    values = {k: v for k, v in pack.items() if k not in (*_ADVANCED_FIELDS, CONF_PACK_ID, CONF_STRENGTH)}
+    skip = (*_ADVANCED_FIELDS, CONF_PACK_ID, CONF_STRENGTH, CONF_DOSES)
+    values = {k: v for k, v in pack.items() if k not in skip}
     values[SECTION_ADVANCED] = {k: pack[k] for k in _ADVANCED_FIELDS if k in pack}
+    values[SECTION_ADVANCED][CONF_INDIVIDUAL_DOSES] = bool(pack.get(CONF_DOSES))
+    # "Intakes" shows the regular ones, "As needed" the others (stored together in `intakes`).
+    as_needed = set(pack.get(CONF_AS_NEEDED, []))
+    values[CONF_INTAKES] = [k for k in pack.get(CONF_INTAKES, []) if k not in as_needed]
     return values
 
 
-def _parse_pack(user_input: dict[str, Any]) -> dict[str, Any]:
-    """Pack fields from a form (section flattened, numbers as int)."""
-    keys = (CONF_STOCK, CONF_INTAKES, CONF_TAG_ID)
+def _parse_pack(user_input: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """Pack fields from a form (section flattened, whole numbers as int) and "individual doses"."""
+    keys = (CONF_STOCK, CONF_INTAKES, CONF_AS_NEEDED, CONF_TAG_ID)
     pack: dict[str, Any] = {k: user_input[k] for k in keys if k in user_input}
     pack.update(user_input.get(SECTION_ADVANCED, {}))
-    for key in _INT_FIELDS:
+    individual = bool(pack.pop(CONF_INDIVIDUAL_DOSES, False))
+    for key in _NUMBER_FIELDS:
         if key in pack:
-            pack[key] = int(pack[key])  # NumberSelector returns float
-    pack[CONF_INTAKES] = list(dict.fromkeys(pack.get(CONF_INTAKES, [])))
-    return pack
+            pack[key] = tidy(pack[key])  # NumberSelector returns float
+    # "As needed" intakes need not be selected under "Intakes" as well; both are stored in `intakes`.
+    as_needed = list(dict.fromkeys(pack.pop(CONF_AS_NEEDED, None) or []))
+    pack[CONF_INTAKES] = list(dict.fromkeys([*pack.get(CONF_INTAKES, []), *as_needed]))
+    if as_needed:
+        pack[CONF_AS_NEEDED] = as_needed
+    return pack, individual
 
 
 class MedicationSubentryFlow(ConfigSubentryFlow):
@@ -401,10 +419,22 @@ class MedicationSubentryFlow(ConfigSubentryFlow):
         self._strengths: list[str] = []
         self._existing: dict[str, dict[str, Any]] = {}  # strength (casefold) -> stored pack
         self._packs: list[dict[str, Any]] = []
+        self._pending: dict[str, Any] = {}  # pack waiting for its doses page
         self._reconfigure = False
 
     def _own_id(self) -> str | None:
         return self._get_reconfigure_subentry().subentry_id if self._reconfigure else None
+
+    def _existing_pack(self) -> dict[str, Any] | None:
+        """Stored pack of the strength currently being edited."""
+        return self._existing.get(self._strengths[len(self._packs)].casefold())
+
+    async def _async_next(self, pack: dict[str, Any], individual: bool) -> SubentryFlowResult:
+        """After a valid pack page: doses page, next pack page or finish."""
+        if individual:
+            self._pending = pack
+            return await self.async_step_doses()
+        return self._add_pack(pack) or await self.async_step_pack()
 
     def _pack_errors(self, pack: dict[str, Any]) -> dict[str, str]:
         errors: dict[str, str] = {}
@@ -435,14 +465,14 @@ class MedicationSubentryFlow(ConfigSubentryFlow):
             strengths = [str(x).strip() for x in user_input.get(CONF_STRENGTHS, [])]
             self._strengths = list(dict.fromkeys(x for x in strengths if x)) or [""]
             self._packs = []
-            pack = _parse_pack(user_input)
+            pack, individual = _parse_pack(user_input)
             if not self._name:
                 errors[CONF_NAME] = "no_name"
             elif len({x.casefold() for x in self._strengths}) != len(self._strengths):
                 errors[CONF_STRENGTHS] = "duplicate_strengths"
             errors.update(self._pack_errors(pack))
             if not errors:
-                return self._add_pack(pack) or await self.async_step_pack()
+                return await self._async_next(pack, individual)
             suggested = user_input
 
         entry = self._get_entry()
@@ -479,10 +509,10 @@ class MedicationSubentryFlow(ConfigSubentryFlow):
         suggested = _pack_suggested(existing) if existing else {}
 
         if user_input is not None:
-            pack = _parse_pack(user_input)
+            pack, individual = _parse_pack(user_input)
             errors = self._pack_errors(pack)
             if not errors:
-                return self._add_pack(pack) or await self.async_step_pack()
+                return await self._async_next(pack, individual)
             suggested = user_input
 
         selected = list(existing.get(CONF_INTAKES, [])) if existing else []
@@ -496,6 +526,37 @@ class MedicationSubentryFlow(ConfigSubentryFlow):
                 "position": str(len(self._packs) + 1),
                 "count": str(len(self._strengths)),
             },
+            last_step=len(self._packs) + 1 == len(self._strengths),
+        )
+
+    async def async_step_doses(self, user_input=None) -> SubentryFlowResult:
+        """One dose per intake of the pending pack (field label = intake, e.g. "Morning · Anna")."""
+        pack = self._pending
+        strength = self._strengths[len(self._packs)]
+        entry = self._get_entry()
+        labels = {
+            o["value"]: o["label"]
+            for o in _intake_options(_slots(entry, self.hass), _persons(entry), pack[CONF_INTAKES])
+        }
+        fields = {labels.get(k, k): k for k in pack[CONF_INTAKES]}
+        default = pack.get(CONF_TABLETS_PER_INTAKE, 1)
+
+        if user_input is not None:
+            doses = {key: tidy(user_input.get(label, default)) for label, key in fields.items()}
+            pack = {k: v for k, v in pack.items() if k != CONF_DOSES}
+            if own := {k: v for k, v in doses.items() if v != default}:
+                pack[CONF_DOSES] = own
+            self._pending = {}
+            return self._add_pack(pack) or await self.async_step_pack()
+
+        stored = (self._existing_pack() or {}).get(CONF_DOSES, {})
+        schema = vol.Schema(
+            {vol.Required(label, default=stored.get(key, default)): _DOSE for label, key in fields.items()}
+        )
+        return self.async_show_form(
+            step_id="doses",
+            data_schema=schema,
+            description_placeholders={"medication": f"{self._name} {strength}".strip(), "default": str(default)},
             last_step=len(self._packs) + 1 == len(self._strengths),
         )
 

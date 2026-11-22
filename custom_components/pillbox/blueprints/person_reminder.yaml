@@ -1,0 +1,351 @@
+blueprint:
+  name: Pillbox – person reminder
+  description: >-
+    Reminds a person of everything they still have to take at a time of day, in one
+    notification (e.g. "Still to take: Magnesium 10 mg, Vitamin D"), from a given time
+    and repeated until all of it is done or an end time is reached. Phone notifications
+    (mobile_app) get a "Taken" button that checks off all of them.
+    Create one automation per person and time of day.
+  domain: automation
+  source_url: https://github.com/FdyFox/pillbox/blob/main/custom_components/pillbox/blueprints/person_reminder.yaml
+  input:
+    person:
+      name: Person
+      description: Pillbox person device, e.g. "Anna"
+      selector:
+        device:
+          filter:
+            - integration: pillbox
+              model: Person
+    slot:
+      name: Time of day
+      description: >-
+        Times of day from the Pillbox options. Empty = the person's next time of day
+        with something open.
+      default: ""
+      selector:
+        select:
+          mode: dropdown
+          custom_value: true
+          options: []  # pillbox:slots (filled in by Pillbox when it installs the blueprint)
+    intakes:
+      name: Intakes (optional)
+      description: >-
+        Only these intakes, e.g. "Anna Vitamin D Morning". They are reminded even if
+        they are "as needed". Empty = all of the person's intakes at the time of day
+        (without "as needed" ones).
+      default: []
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - integration: pillbox
+              domain: switch
+    notify_devices:
+      name: Phones
+      description: Companion apps that get the reminder
+      default: []
+      selector:
+        device:
+          multiple: true
+          filter:
+            - integration: mobile_app
+    notify_action:
+      name: Other notify action (optional)
+      description: e.g. notify.family; in addition to the phones
+      default: ""
+      selector:
+        text: {}
+    time_weekday:
+      name: Remind from (Mon–Fri)
+      default: "08:00:00"
+      selector:
+        time: {}
+    time_weekend:
+      name: Remind from (Sat–Sun)
+      default: "10:00:00"
+      selector:
+        time: {}
+    repeat_minutes:
+      name: Repeat every … minutes
+      description: 0 = remind only once
+      default: 60
+      selector:
+        number:
+          min: 0
+          max: 240
+          step: 5
+          unit_of_measurement: min
+          mode: box
+    last_reminder:
+      name: Last reminder at
+      default: "22:00:00"
+      selector:
+        time: {}
+    title:
+      name: Title
+      description: "Available: {{ person }}, {{ slot }}, {{ medications_inline }}"
+      default: "{{ person }}: {{ slot }}"
+      selector:
+        text: {}
+    message:
+      name: Message
+      description: >-
+        Available: {{ person }}, {{ slot }}, {{ medications }} (one per line, e.g. "• Magnesium 10 mg"
+        and "• Vitamin D (½)") and {{ medications_inline }} (in one line, e.g. "Magnesium 10 mg, Vitamin D (½)").
+      default: "Still to take:\n{{ medications }}"
+      selector:
+        text:
+          multiline: true
+    alarm:
+      name: Alarm mode
+      description: >-
+        Phone notifications as an alarm: on Android via the "alarm_stream" channel
+        (alarm sound, also with Do Not Disturb), on iOS as a critical alert with sound
+        (also when muted or in a Focus; allow critical alerts for the app once).
+      default: false
+      selector:
+        boolean: {}
+    button_title:
+      name: Button text
+      description: Text of the button in phone notifications that checks off all intakes listed
+      default: Taken
+      selector:
+        text: {}
+    snooze_minutes:
+      name: Snooze for … minutes
+      description: '"Later" button in phone notifications: the next reminder comes after this time. 0 = no button'
+      default: 15
+      selector:
+        number:
+          min: 0
+          max: 240
+          step: 5
+          unit_of_measurement: min
+          mode: box
+    snooze_title:
+      name: Snooze button text
+      default: Later
+      selector:
+        text: {}
+    dismiss_title:
+      name: Dismiss button text
+      description: Button that stops the reminders for today; the intakes stay open. Empty = no button
+      default: Skip
+      selector:
+        text: {}
+
+mode: parallel
+max: 5
+
+trigger_variables:
+  person_device: !input person
+
+triggers:
+  - trigger: time
+    at: !input time_weekday
+    id: weekday
+  - trigger: time
+    at: !input time_weekend
+    id: weekend
+  - trigger: event
+    event_type: mobile_app_notification_action
+    event_data:
+      action: "PILLBOX_PERSON_{{ person_device }}"
+    id: take
+
+variables:
+  slot_input: !input slot
+  chosen: !input intakes
+  notify_devices: !input notify_devices
+  notify_action: !input notify_action
+  repeat_minutes: !input repeat_minutes
+  last_reminder: !input last_reminder
+  button_title: !input button_title
+  alarm: !input alarm
+  action_id: "PILLBOX_PERSON_{{ person_device }}"
+  person: "{{ device_attr(person_device, 'name_by_user') or device_attr(person_device, 'name') }}"
+  # Fixed time of day, the one of the chosen intakes, or the person's next one with something open.
+  slot: >-
+    {{ (slot_input | trim)
+       or (chosen | expand | map(attribute='attributes.slot') | select('string') | first | default(''))
+       or (device_entities(person_device) | select('match', 'sensor[.]') | expand
+           | selectattr('attributes.next_slot', 'defined') | map(attribute='attributes.next_slot')
+           | select('string') | first | default('')) }}
+  # Intake switches this reminder is about (whether they are open is checked each time).
+  pool: >-
+    {%- if chosen | count > 0 -%}{{ chosen }}{%- else -%}
+    {{ device_entities(person_device) | select('match', 'switch[.]') | expand
+       | selectattr('attributes.slot', 'eq', slot) | rejectattr('attributes.as_needed')
+       | map(attribute='entity_id') | list }}{%- endif -%}
+  # Phones -> notify.mobile_app_<device name> (the name the Companion app registered with).
+  targets: >-
+    {%- set ns = namespace(items=[]) -%}
+    {%- for d in notify_devices -%}
+      {%- set ns.items = ns.items + [{'action': 'notify.mobile_app_' ~ (device_attr(d, 'name') | slugify), 'app': true}] -%}
+    {%- endfor -%}
+    {%- if notify_action | trim -%}
+      {%- set ns.items = ns.items + [{'action': notify_action | trim, 'app': (notify_action | trim).startswith('notify.mobile_app_')}] -%}
+    {%- endif -%}
+    {{- ns.items -}}
+  snooze_minutes: !input snooze_minutes
+  snooze_title: !input snooze_title
+  dismiss_title: !input dismiss_title
+  snooze_id: "{{ action_id }}_SNOOZE"
+  dismiss_id: "{{ action_id }}_DISMISS"
+  # Buttons of phone notifications: taken, skip, later ("skip" in the middle, so it is not hit by mistake
+  # at the edge; empty texts / 0 minutes = without that button).
+  buttons: >-
+    {%- set b = [{'action': action_id, 'title': button_title}] -%}
+    {%- if dismiss_title | trim -%}
+      {%- set b = b + [{'action': dismiss_id, 'title': dismiss_title}] -%}
+    {%- endif -%}
+    {%- if snooze_minutes | int(0) > 0 and snooze_title | trim -%}
+      {%- set b = b + [{'action': snooze_id, 'title': snooze_title}] -%}
+    {%- endif -%}
+    {{- b -}}
+  # Android reads ttl/priority/channel, iOS reads push; each ignores the other part.
+  alarm_data:
+    ttl: 0
+    priority: high
+    channel: alarm_stream
+    push:
+      interruption-level: critical
+      sound:
+        name: default
+        critical: 1
+        volume: 1.0
+
+conditions:
+  - condition: or
+    conditions:
+      - condition: trigger
+        id: take
+      - condition: and
+        conditions:
+          - condition: trigger
+            id: weekday
+          - condition: time
+            weekday: [mon, tue, wed, thu, fri]
+      - condition: and
+        conditions:
+          - condition: trigger
+            id: weekend
+          - condition: time
+            weekday: [sat, sun]
+  - condition: template
+    value_template: "{{ pool | select('is_state', 'off') | list | count > 0 }}"
+
+actions:
+  - if:
+      - condition: trigger
+        id: take
+    then:
+      - action: switch.turn_on
+        target:
+          entity_id: "{{ pool | select('is_state', 'off') | list }}"
+    else:
+      - repeat:
+          while:
+            - condition: template
+              value_template: "{{ pool | select('is_state', 'off') | list | count > 0 }}"
+            - condition: template
+              value_template: "{{ now().strftime('%H:%M:%S') < last_reminder }}"
+          sequence:
+            # Recalculated on every reminder, so only what is still open is listed.
+            - variables:
+                medications: >-
+                  {%- set ns = namespace(items=[]) -%}
+                  {%- for s in pool | select('is_state', 'off') | expand -%}
+                    {%- set dose = s.attributes.dose | float(1) -%}
+                    {%- set fraction = {0.25: '¼', 0.5: '½', 0.75: '¾'}.get(dose) or (dose | string) -%}
+                    {%- set ns.items = ns.items + [s.attributes.medication ~ ((' (' ~ fraction ~ ')') if dose != 1 else '')] -%}
+                  {%- endfor -%}
+                  {{- ns.items | sort | map('regex_replace', '^', '• ') | join('\n') -}}
+                medications_inline: >-
+                  {{ medications.split('\n') | map('regex_replace', '^• ', '') | join(', ') }}
+            - variables:
+                reminder_title: !input title
+                reminder_message: !input message
+            - repeat:
+                for_each: "{{ targets }}"
+                sequence:
+                  - action: "{{ repeat.item.action }}"
+                    data:
+                      title: "{{ reminder_title }}"
+                      message: "{{ reminder_message }}"
+                      data: >-
+                        {%- if repeat.item.app -%}
+                          {{ dict({'tag': action_id, 'actions': buttons}, **(alarm_data if alarm else {})) }}
+                        {%- else -%}{{ {} }}{%- endif -%}
+            # Wait until done, "Later", "Skip" or the next repetition (without repetition: until the last reminder).
+            - wait_for_trigger:
+                - trigger: template
+                  value_template: "{{ pool | select('is_state', 'off') | list | count == 0 }}"
+                  id: done
+                - trigger: event
+                  event_type: mobile_app_notification_action
+                  event_data:
+                    action: "{{ snooze_id }}"
+                  id: snooze
+                - trigger: event
+                  event_type: mobile_app_notification_action
+                  event_data:
+                    action: "{{ dismiss_id }}"
+                  id: dismiss
+              timeout:
+                minutes: >-
+                  {{ repeat_minutes | int if repeat_minutes | int(0) > 0 else
+                     [((today_at(last_reminder) - now()).total_seconds() / 60) | round(0, 'ceil') | int, 1] | max }}
+            - variables:
+                answer: "{{ wait.trigger.id if wait.trigger else 'timeout' }}"
+            # "Later": wait for the snooze time (or done / "Skip"), then remind again.
+            - if:
+                - condition: template
+                  value_template: "{{ answer == 'snooze' }}"
+              then:
+                - wait_for_trigger:
+                    - trigger: template
+                      value_template: "{{ pool | select('is_state', 'off') | list | count == 0 }}"
+                      id: done
+                    - trigger: event
+                      event_type: mobile_app_notification_action
+                      event_data:
+                        action: "{{ dismiss_id }}"
+                      id: dismiss
+                  timeout:
+                    minutes: "{{ snooze_minutes | int }}"
+                - variables:
+                    answer: "{{ wait.trigger.id if wait.trigger else 'snoozed' }}"
+            # "Skip": no more reminders today, remove them from all phones.
+            - if:
+                - condition: template
+                  value_template: "{{ answer == 'dismiss' }}"
+              then:
+                - repeat:
+                    for_each: "{{ targets | selectattr('app') | list }}"
+                    sequence:
+                      - action: "{{ repeat.item.action }}"
+                        data:
+                          message: clear_notification
+                          data:
+                            tag: "{{ action_id }}"
+                - stop: Skipped for today
+            - if:
+                - condition: template
+                  value_template: "{{ answer == 'timeout' and repeat_minutes | int(0) == 0 }}"
+              then:
+                - stop: Reminded once
+      # Done -> remove the reminder from the phones.
+      - if:
+          - condition: template
+            value_template: "{{ pool | select('is_state', 'off') | list | count == 0 }}"
+        then:
+          - repeat:
+              for_each: "{{ targets | selectattr('app') | list }}"
+              sequence:
+                - action: "{{ repeat.item.action }}"
+                  data:
+                    message: clear_notification
+                    data:
+                      tag: "{{ action_id }}"

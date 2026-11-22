@@ -10,10 +10,10 @@ Home Assistant integration (Marketplace / HACS) for medication stock and intakes
 - `custom_components/pillbox/__init__.py`: `PillboxManager` (load, save, tag scans, day change) and `_async_migrate` (migration of older entries).
 - `custom_components/pillbox/config_flow.py`: Pillbox entry with options (times of day) and the subentries "People" and "Medication" (with packs).
 - Platforms: `number`, `sensor`, `binary_sensor`, `switch`, `button`; common base in `entity.py`.
-- `custom_components/pillbox/services.py`: services `pillbox.take` and `pillbox.refill` (`services.yaml`, icons in `icons.json`).
-- `custom_components/pillbox/frontend/pillbox-card.js`: dashboard card, plain JavaScript without a build step, served and registered by `__init__.py`. Bump `version` in `manifest.json` when it changes, so browsers load the new file.
-- `blueprints/automation/pillbox/intake_reminder.yaml`: reminder blueprint.
-- `tests/`: logic, integration, service, card (rendered with QuickJS) and blueprint tests against a real HA.
+- `custom_components/pillbox/services.py`: services `pillbox.take` and `pillbox.refill`; the entity service `pillbox.take_intake` is registered in `switch.py` (all in `services.yaml`, icons in `icons.json`).
+- `custom_components/pillbox/frontend/pillbox-card.js`: dashboard cards `pillbox-card` and `pillbox-intake-card`, plain JavaScript without a build step, served and registered by `__init__.py`. Bump `version` in `manifest.json` when it changes, so browsers load the new file.
+- `custom_components/pillbox/blueprints/`: reminder blueprints (per intake, per person), copied to `/config/blueprints/automation/pillbox/` by `async_setup` (HACS and the Marketplace only install `custom_components/`).
+- `tests/`: logic, integration, service, card (rendered with QuickJS) and blueprint tests (`test_blueprint.py`, `test_person_reminder.py`) against a real HA.
 - `.github/workflows/validate.yml`: tests, `hassfest` and repository validation (`hacs/action`, used by the Marketplace as well) on every push.
 
 ## Rules

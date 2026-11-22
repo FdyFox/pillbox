@@ -46,12 +46,14 @@
             "strengths": "Strengths",
             "stock": "Stock (tablets)",
             "intakes": "Intakes",
+            "as_needed": "As needed",
             "tag_id": "NFC tag"
           },
           "data_description": {
             "strengths": "One pack per strength, e.g. \"10 mg\", \"20 mg\". Each pack has its own stock. Leave empty for a single pack.",
-            "stock": "Changing this value overwrites the current stock.",
-            "intakes": "Who takes it when. Times of day are set in the Pillbox options, people via \"Add people\".",
+            "stock": "Changing this value overwrites the current stock. Halves and quarters are allowed, e.g. 24.5.",
+            "intakes": "Regular intakes: who takes it when. Times of day are set in the Pillbox options, people via \"Add people\".",
+            "as_needed": "Intakes taken only when needed, e.g. \"Night · Anna\". They can be checked off as usual, but are never open and do not count towards the days left.",
             "tag_id": "Optional tag on the pack: a scan records the next open intake of this medication."
           },
           "sections": {
@@ -59,9 +61,12 @@
               "name": "Dosage and warning",
               "data": {
                 "tablets_per_intake": "Tablets per intake",
+                "individual_doses": "Different dose per intake",
                 "low_threshold": "Low stock threshold"
               },
               "data_description": {
+                "tablets_per_intake": "Default dose, also ½ (0.5) or ¼ (0.25).",
+                "individual_doses": "Next, one page with a dose for each intake, e.g. Anna ½ and Ben 1.",
                 "low_threshold": "Warn when stock falls below this number of tablets."
               }
             }
@@ -75,12 +80,14 @@
             "strengths": "Strengths",
             "stock": "Stock (tablets)",
             "intakes": "Intakes",
+            "as_needed": "As needed",
             "tag_id": "NFC tag"
           },
           "data_description": {
             "strengths": "One pack per strength, e.g. \"10 mg\", \"20 mg\". Each pack has its own stock. Leave empty for a single pack.",
-            "stock": "Changing this value overwrites the current stock.",
-            "intakes": "Who takes it when. Times of day are set in the Pillbox options, people via \"Add people\".",
+            "stock": "Changing this value overwrites the current stock. Halves and quarters are allowed, e.g. 24.5.",
+            "intakes": "Regular intakes: who takes it when. Times of day are set in the Pillbox options, people via \"Add people\".",
+            "as_needed": "Intakes taken only when needed, e.g. \"Night · Anna\". They can be checked off as usual, but are never open and do not count towards the days left.",
             "tag_id": "Optional tag on the pack: a scan records the next open intake of this medication."
           },
           "sections": {
@@ -88,9 +95,12 @@
               "name": "Dosage and warning",
               "data": {
                 "tablets_per_intake": "Tablets per intake",
+                "individual_doses": "Different dose per intake",
                 "low_threshold": "Low stock threshold"
               },
               "data_description": {
+                "tablets_per_intake": "Default dose, also ½ (0.5) or ¼ (0.25).",
+                "individual_doses": "Next, one page with a dose for each intake, e.g. Anna ½ and Ben 1.",
                 "low_threshold": "Warn when stock falls below this number of tablets."
               }
             }
@@ -102,11 +112,13 @@
           "data": {
             "stock": "Stock (tablets)",
             "intakes": "Intakes",
+            "as_needed": "As needed",
             "tag_id": "NFC tag"
           },
           "data_description": {
-            "stock": "Changing this value overwrites the current stock.",
-            "intakes": "Who takes it when. Times of day are set in the Pillbox options, people via \"Add people\".",
+            "stock": "Changing this value overwrites the current stock. Halves and quarters are allowed, e.g. 24.5.",
+            "intakes": "Regular intakes: who takes it when. Times of day are set in the Pillbox options, people via \"Add people\".",
+            "as_needed": "Intakes taken only when needed, e.g. \"Night · Anna\". They can be checked off as usual, but are never open and do not count towards the days left.",
             "tag_id": "Optional tag on the pack: a scan records the next open intake of this medication."
           },
           "sections": {
@@ -114,19 +126,26 @@
               "name": "Dosage and warning",
               "data": {
                 "tablets_per_intake": "Tablets per intake",
+                "individual_doses": "Different dose per intake",
                 "low_threshold": "Low stock threshold"
               },
               "data_description": {
+                "tablets_per_intake": "Default dose, also ½ (0.5) or ¼ (0.25).",
+                "individual_doses": "Next, one page with a dose for each intake, e.g. Anna ½ and Ben 1.",
                 "low_threshold": "Warn when stock falls below this number of tablets."
               }
             }
           }
+        },
+        "doses": {
+          "title": "{medication}: doses",
+          "description": "Tablets per intake, e.g. 0.5 for half a tablet. Default: {default}."
         }
       },
       "error": {
         "no_name": "Please enter a name.",
         "tag_in_use": "This tag is already used by another person or medication.",
-        "no_intakes": "Select at least one intake.",
+        "no_intakes": "Select at least one intake (regular or as needed).",
         "duplicate_strengths": "Each strength may appear only once."
       },
       "abort": {
@@ -246,6 +265,16 @@
         "stock": {
           "name": "Stock",
           "description": "Set the stock to this number of tablets."
+        }
+      }
+    },
+    "take_intake": {
+      "name": "Take intake",
+      "description": "Checks off an intake, optionally with a different amount than its dose (today only, e.g. 0.75 instead of 1). On an intake already taken, it corrects the amount.",
+      "fields": {
+        "amount": {
+          "name": "Amount",
+          "description": "Tablets taken. Empty = the intake's dose."
         }
       }
     }

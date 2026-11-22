@@ -16,7 +16,10 @@ SUBENTRY_PERSON = "person"  # all people (one device each, own NFC tag)
 CONF_TAG_ID = "tag_id"
 CONF_STOCK = "stock"
 CONF_STRENGTH = "strength"  # e.g. "10 mg", display only
-CONF_TABLETS_PER_INTAKE = "tablets_per_intake"
+CONF_TABLETS_PER_INTAKE = "tablets_per_intake"  # default dose per intake (fractions allowed, e.g. 0.5)
+CONF_DOSES = "doses"  # optional: intake key -> own dose, if it differs from tablets_per_intake
+CONF_AS_NEEDED = "as_needed"  # intake keys taken only when needed (never open, not in the daily consumption)
+CONF_INDIVIDUAL_DOSES = "individual_doses"  # form only: show the page with one dose per intake
 CONF_INTAKES = "intakes"  # list of intake keys "<slot-id>|<person-id>" (empty person = no person)
 CONF_LOW_THRESHOLD = "low_threshold"
 SECTION_ADVANCED = "advanced"
@@ -46,6 +49,7 @@ DAY_RESET_HOUR = 4  # day change for "taken today" (an intake after midnight sti
 EVENT_TAG_SCANNED = "tag_scanned"
 SERVICE_TAKE = "take"
 SERVICE_REFILL = "refill"
+SERVICE_TAKE_INTAKE = "take_intake"
 EVENT_LOW_STOCK = f"{DOMAIN}_low_stock"
 
 

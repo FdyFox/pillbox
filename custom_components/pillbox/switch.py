@@ -3,25 +3,37 @@
 A person's intakes belong to the person's device (e.g. "Anna" -> "Magnesium 10 mg Morning"),
 so it shows what they still need to take today. Intakes without a person belong to the pack.
 
-On = intake done, stock drops by "tablets per intake".
+On = intake done, stock drops by the intake's dose.
 Off = undone (e.g. checked off by mistake), the tablets go back into stock.
+"As needed" intakes work the same, but are never open (attribute `as_needed`).
 """
 from __future__ import annotations
 
 from typing import Any
 
+import voluptuous as vol
+
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_platform
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import PillboxConfigEntry, PillboxManager, intake_unique_id
-from .const import parse_key
+from .const import SERVICE_TAKE_INTAKE, parse_key
 from .entity import PillboxEntity, person_device_info
+
+ATTR_AMOUNT = "amount"
 
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: PillboxConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
+    # pillbox.take_intake: check off this intake, optionally with another amount than its dose (today only).
+    entity_platform.async_get_current_platform().async_register_entity_service(
+        SERVICE_TAKE_INTAKE,
+        {vol.Optional(ATTR_AMOUNT): vol.All(vol.Coerce(float), vol.Range(min=0.01, max=100))},
+        "async_take_intake",
+    )
     manager = entry.runtime_data
     for pack_id, med in manager.meds.items():
         for key in med.intakes:
@@ -59,6 +71,9 @@ class IntakeSwitch(PillboxEntity, SwitchEntity):
             "slot_id": parse_key(self.key)[0],
             "person": person.name if person else None,
             "ha_person": person.ha_person if person else None,
+            "dose": self.manager.dose(self.sub_id, self.key),
+            "as_needed": self.manager.is_as_needed(self.sub_id, self.key),
+            "taken_amount": self.manager.amount(self.sub_id, self.key),
         }
 
     async def async_turn_on(self, **kwargs: Any) -> None:
@@ -66,3 +81,7 @@ class IntakeSwitch(PillboxEntity, SwitchEntity):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self.manager.async_set_intake(self.sub_id, self.key, False)
+
+    async def async_take_intake(self, amount: float | None = None) -> None:
+        """Check off with `amount` tablets (default: the dose); on a taken intake, correct the amount."""
+        await self.manager.async_set_intake(self.sub_id, self.key, True, amount)

@@ -27,8 +27,8 @@ REFILL_SCHEMA = vol.All(
     vol.Schema(
         {
             vol.Required(ATTR_DEVICE_ID): vol.All(cv.ensure_list, [cv.string]),
-            vol.Exclusive(ATTR_ADD, "amount"): vol.All(vol.Coerce(int), vol.Range(min=1, max=10000)),
-            vol.Exclusive(ATTR_STOCK, "amount"): vol.All(vol.Coerce(int), vol.Range(min=0, max=10000)),
+            vol.Exclusive(ATTR_ADD, "amount"): vol.All(vol.Coerce(float), vol.Range(min=0.25, max=10000)),
+            vol.Exclusive(ATTR_STOCK, "amount"): vol.All(vol.Coerce(float), vol.Range(min=0, max=10000)),
         }
     ),
     cv.has_at_least_one_key(ATTR_ADD, ATTR_STOCK),

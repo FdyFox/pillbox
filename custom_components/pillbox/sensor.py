@@ -37,8 +37,8 @@ class DaysLeftSensor(PillboxEntity, SensorEntity):
     _attr_suggested_display_precision = 0
 
     @property
-    def native_value(self) -> int:
-        return self.med.days_left(logical_today())
+    def native_value(self) -> int | None:
+        return self.med.days_left(logical_today())  # None (unknown) if the pack is only taken as needed
 
 
 class RunsOutOnSensor(PillboxEntity, SensorEntity):
@@ -67,6 +67,7 @@ class TakenCountSensor(PillboxEntity, SensorEntity):
             "total": med.intakes_per_day,
             "taken": [name(k) for k, t in zip(med.intakes, med.taken) if t],
             "open": [name(k) for k in med.open_intakes],
+            "as_needed": [name(k) for k, a in zip(med.intakes, med.as_needed) if a],
         }
 
 
@@ -79,9 +80,12 @@ class PersonOpenSensor(PersonEntity, SensorEntity):
     def _intakes(self) -> list[tuple[str, str, bool]]:
         return self.manager.person_intakes(self.sub_id)
 
+    def _open(self) -> list[tuple[str, str, bool]]:
+        return [i for i in self._intakes() if not i[2] and not self.manager.is_as_needed(i[0], i[1])]
+
     @property
     def native_value(self) -> int:
-        return sum(1 for *_, taken in self._intakes() if not taken)
+        return len(self._open())
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -90,7 +94,8 @@ class PersonOpenSensor(PersonEntity, SensorEntity):
         next_slot = m.next_slot_for(self.sub_id)
         return {
             "next_slot": m.slots.get(next_slot) if next_slot else None,
-            "next": [label(s, k) for s, k, t in self._intakes() if not t and parse_key(k)[0] == next_slot],
-            "open": [label(s, k) for s, k, t in self._intakes() if not t],
+            "next": [label(s, k) for s, k, _ in self._open() if parse_key(k)[0] == next_slot],
+            "open": [label(s, k) for s, k, _ in self._open()],
             "taken": [label(s, k) for s, k, t in self._intakes() if t],
+            "as_needed": [label(s, k) for s, k, _ in self._intakes() if m.is_as_needed(s, k)],
         }

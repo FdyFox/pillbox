@@ -474,7 +474,7 @@ async def test_reconfigure_prefills_section(hass, entry):
     assert result["step_id"] == "reconfigure" and result["last_step"] is True
     advanced = next(v for k, v in result["data_schema"].schema.items() if str(k) == "advanced")
     sub_suggested = {str(k): (k.description or {}).get("suggested_value") for k in advanced.schema.schema}
-    assert sub_suggested == {"tablets_per_intake": 1, "low_threshold": 20}
+    assert sub_suggested == {"tablets_per_intake": 1, "individual_doses": False, "low_threshold": 20}
     result = await hass.config_entries.subentries.async_configure(
         result["flow_id"],
         {"name": "Vitamin D", "strengths": [], "stock": 40, "intakes": ["1|"], "advanced": {"tablets_per_intake": 2, "low_threshold": 20}},

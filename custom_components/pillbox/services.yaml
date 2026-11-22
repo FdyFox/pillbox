@@ -17,12 +17,27 @@ refill:
     add:
       selector:
         number:
-          min: 1
+          min: 0.25
           max: 10000
+          step: 0.25
           mode: box
     stock:
       selector:
         number:
           min: 0
           max: 10000
+          step: 0.25
+          mode: box
+take_intake:
+  target:
+    entity:
+      integration: pillbox
+      domain: switch
+  fields:
+    amount:
+      selector:
+        number:
+          min: 0.25
+          max: 10
+          step: 0.25
           mode: box

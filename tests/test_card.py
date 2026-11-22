@@ -77,7 +77,7 @@ async def test_card_renders_people_and_packs(hass, freezer):
     result = json.loads(ctx.eval(RUN))
     html = result["html"]
 
-    assert result["registered"] == ["pillbox-card"]
+    assert result["registered"] == ["pillbox-card", "pillbox-intake-card"]
     # People with their intakes; Ben's morning intake is done, Anna's next slot is "Morgens".
     assert "Anna" in html and "Ben" in html
     assert "Als Nächstes: <b>Morgens</b>" in html
@@ -219,3 +219,153 @@ async def test_card_stock_buttons(hass, freezer):
         ["number", "set_value", {"entity_id": "number.a", "value": 25}],
         ["number", "set_value", {"entity_id": "number.b", "value": 0}],
     ]
+
+
+async def test_card_doses_and_as_needed(hass, freezer):
+    from .test_doses import _entry
+
+    quickjs = pytest.importorskip("quickjs")
+    entry = _entry(hass)
+    freezer.move_to(_at("2026-11-18 07:30:00"))
+    await _setup(hass, entry)
+    await hass.services.async_call("switch", "turn_on", {"entity_id": "switch.anna_magnesium_10_mg_morgens"}, blocking=True)
+    await hass.async_block_till_done()
+    html, _ = await _render(hass, quickjs, entry, {"stock_buttons": True, "stock_step": 0.5})
+    # Anna's dose is shown in her chip, Ben's evening intake is "as needed" and never "next".
+    assert '<span class="dose">½×</span>' in html
+    assert 'class="chip open as-needed" data-toggle="switch.ben_magnesium_10_mg_abends"' in html
+    assert 'class="chip open next" data-toggle="switch.ben_magnesium_10_mg_morgens"' in html
+    # Stock with fractions; -/+ by half a tablet.
+    assert ">19½</span>" in html
+    assert 'data-delta="-0.5"' in html
+
+
+async def test_card_pack_only_as_needed(hass, freezer):
+    from .test_init import MED_DATA, _make_entry
+
+    quickjs = pytest.importorskip("quickjs")
+    entry = _make_entry(hass, {**MED_DATA, "as_needed": ["1|"]})
+    freezer.move_to(_at("2026-11-18 07:30:00"))
+    await _setup(hass, entry)
+    html, _ = await _render(hass, quickjs, entry, {})
+    assert 'title="Lasts">–</span>' in html
+    assert "unknown" not in html
+
+
+async def test_card_days_singular(hass, freezer):
+    from .test_init import MED_DATA, _make_entry
+
+    quickjs = pytest.importorskip("quickjs")
+    entry = _make_entry(hass, {**MED_DATA, "stock": 1})
+    freezer.move_to(_at("2026-11-18 07:30:00"))
+    await _setup(hass, entry)
+    html, _ = await _render(hass, quickjs, entry, {})
+    assert 'title="Lasts">1 day</span>' in html
+
+
+RUN_INTAKE_CARD = """
+(() => {
+  const card = new (customElements.get("pillbox-intake-card"))();
+  const calls = [];
+  const hass = JSON.parse(HASS_JSON);
+  hass.callService = (domain, service, data) => calls.push([domain, service, data]);
+  card.setConfig(JSON.parse(CONFIG_JSON));
+  card.hass = hass;
+  const click = (dataset) => card._onClick({ target: { closest: () => ({ dataset }) } });
+  click({ take: "switch.ben_magnesium_10_mg_morgens", value: "0.75" });
+  click({ undo: "switch.anna_magnesium_10_mg_morgens" });
+  return JSON.stringify({ html: card.shadowRoot.innerHTML, calls, buttons: card._buttons });
+})()
+"""
+
+
+async def test_intake_card(hass, freezer):
+    from .test_doses import _entry
+
+    quickjs = pytest.importorskip("quickjs")
+    entry = _entry(hass)
+    freezer.move_to(_at("2026-11-18 07:30:00"))
+    await _setup(hass, entry)
+    await hass.services.async_call("pillbox", "take_intake", {"entity_id": "switch.anna_magnesium_10_mg_morgens", "amount": 0.25}, blocking=True)
+    await hass.async_block_till_done()
+    entities = er.async_get(hass)
+    devices = dr.async_get(hass)
+    device_list = dr.async_entries_for_config_entry(devices, entry.entry_id)
+    ids = {d.name: d.id for d in device_list}
+    fake_hass = {
+        "locale": {"language": "de"},
+        "entities": {e.entity_id: {"entity_id": e.entity_id, "device_id": e.device_id, "platform": e.platform} for e in er.async_entries_for_config_entry(entities, entry.entry_id)},
+        "devices": {d.id: {"name": d.name, "name_by_user": d.name_by_user} for d in device_list},
+        "states": {s.entity_id: {"state": s.state, "attributes": dict(s.attributes)} for s in hass.states.async_all()},
+    }
+
+    def run(config):
+        ctx = quickjs.Context()
+        ctx.eval(HARNESS)
+        ctx.eval(CARD_PATH.read_text())
+        ctx.set("HASS_JSON", json.dumps(fake_hass, default=str))
+        ctx.set("CONFIG_JSON", json.dumps(config))
+        return json.loads(ctx.eval(RUN_INTAKE_CARD))
+
+    # Default: one button "1".
+    result = run({})
+    html = result["html"]
+    assert result["buttons"] == [1]
+    assert 'data-take="switch.ben_magnesium_10_mg_morgens" data-value="1"' in html
+    assert 'data-value="0.5"' not in html
+    # Anna took a quarter: shown as taken, with "Undo"; "bei Bedarf" for Ben's evening intake.
+    assert "✓ ¼ genommen" in html and 'data-undo="switch.anna_magnesium_10_mg_morgens"' in html
+    assert "bei Bedarf" in html
+    assert '<span class="name">Magnesium 10 mg</span>' in html
+    # Two people -> one section each; the name is in the heading, not in every row.
+    assert html.index("<h3>Anna</h3>") < html.index("<h3>Ben</h3>")
+    assert "Abends · Dosis 1 · bei Bedarf" in html and "Ben · Abends" not in html
+    assert result["calls"] == [
+        ["pillbox", "take_intake", {"entity_id": "switch.ben_magnesium_10_mg_morgens", "amount": 0.75}],
+        ["switch", "turn_off", {"entity_id": "switch.anna_magnesium_10_mg_morgens"}],
+    ]
+
+    # Own buttons (also typed in as text with a comma), sorted; the amount taken is highlighted.
+    result = run({"buttons": ["0,75", 0.25, "1", 0.25, "x"]})
+    assert result["buttons"] == [0.25, 0.75, 1]
+    html = result["html"]
+    assert '>¾</button>' in html
+    assert 'class="dose current" data-take="switch.anna_magnesium_10_mg_morgens" data-value="0.25"' in html
+
+    # Filters: only Ben, without "as needed" and without intakes already taken.
+    html = run({"people": [ids["Ben"]], "hide_as_needed": True, "hide_done": True})["html"]
+    assert "switch.ben_magnesium_10_mg_morgens" in html
+    assert "<h3>" not in html and "Ben · Morgens" in html  # one person: no sections, name in the row
+    assert "switch.ben_magnesium_10_mg_abends" not in html and "switch.anna" not in html
+    html = run({"packs": [ids["Magnesium 10 mg"]]})["html"]
+    assert "switch.anna_magnesium_10_mg_morgens" in html
+
+
+async def test_card_stock_dialog(hass, freezer):
+    quickjs = pytest.importorskip("quickjs")
+    entry = _family_entry(hass)
+    freezer.move_to(_at("2026-11-18 07:30:00"))
+    await _setup(hass, entry)
+    html, _ = await _render(hass, quickjs, entry, {})
+    # The pack name opens the stock dialog.
+    assert 'data-edit="number.magnesium_10_mg_stock" data-name="Magnesium 10 mg"' in html
+
+    ctx = quickjs.Context()
+    ctx.eval(HARNESS)
+    ctx.eval(CARD_PATH.read_text())
+    result = json.loads(ctx.eval("""
+      (() => {
+        const card = new (customElements.get("pillbox-card"))();
+        const calls = [];
+        card.setConfig({});
+        card._hass = { states: { "number.a": { state: "30" } }, callService: (d, s, data) => calls.push([d, s, data]) };
+        card._onClick({ target: { closest: () => ({ dataset: { edit: "number.a", name: "Magnesium 10 mg" } }) } });
+        const saved = [card._saveStock("number.a", "12,5"), card._saveStock("number.a", "30"),
+                       card._saveStock("number.a", ""), card._saveStock("number.a", "-1"), card._saveStock("number.a", "abc")];
+        return JSON.stringify({ editing: card._editing, saved, calls });
+      })()
+    """))
+    assert result["editing"] == {"entityId": "number.a", "name": "Magnesium 10 mg", "value": "30"}
+    assert result["saved"] == [True, True, False, False, False]
+    # Only a changed value is sent.
+    assert result["calls"] == [["number", "set_value", {"entity_id": "number.a", "value": 12.5}]]

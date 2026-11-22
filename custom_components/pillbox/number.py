@@ -20,12 +20,12 @@ class StockNumber(PillboxEntity, NumberEntity):
     _attr_mode = NumberMode.BOX
     _attr_native_min_value = 0
     _attr_native_max_value = 10000
-    _attr_native_step = 1
+    _attr_native_step = 0.25  # halves and quarters of split tablets
     _attr_native_unit_of_measurement = "Stk"
 
     @property
-    def native_value(self) -> int:
+    def native_value(self) -> float:
         return self.med.stock
 
     async def async_set_native_value(self, value: float) -> None:
-        await self.manager.async_refill(self.sub_id, int(value))
+        await self.manager.async_refill(self.sub_id, value)

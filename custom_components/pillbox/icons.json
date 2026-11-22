@@ -5,6 +5,9 @@
     },
     "refill": {
       "service": "mdi:package-variant-plus"
+    },
+    "take_intake": {
+      "service": "mdi:pill-multiple"
     }
   }
 }
